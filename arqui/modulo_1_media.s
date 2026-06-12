@@ -1,37 +1,30 @@
 // ============================================================
 // modulo_1_media.s
-// Integrante 1 - Media Aritmética Ponderada
-// Curso: ACYE1 - Segundo Semestre 2026
+// Integrante 1 - Media Aritmetica Ponderada
+// Curso: ACYE1 - Vacaciones Junio 2026
 //
-// Lo que hace este modulo:
-//   1. Lee los 30 datos de Temperatura (columna 1) desde lecturas.csv
-//      usando leer_datos de utils.s
-//   2. Calcula la media aritmética ponderada con pesos W1=1, W2=2 ... W30=30
-//   3. Escribe el resultado en resultado_media.txt
+// Leo la columna TEMP (columna 1) del archivo lecturas.csv
+// y calculo la media ponderada donde cada dato tiene un peso
+// distinto: el primero tiene peso 1, el segundo peso 2, etc.
 //
-// Fórmula:
-//   MEDIA_PONDERADA = Σ(Xi * Wi) / ΣWi
-//   Donde Wi = i+1, es decir, el primer dato tiene peso 1,
-//   el segundo tiene peso 2, y así hasta el dato 30 con peso 30
+// La formula que uso es:
+//   MEDIA_PONDERADA = S(Xi * Wi) / SWi   donde Wi va de 1 a 30
 //
-// Funciones que uso de utils.s:
-//   leer_datos      -> llena el arreglo datos[] con la columna que le pida
-//   int_a_ascii     -> convierte un numero entero a texto legible
-//   datos           -> arreglo compartido donde viven los 30 valores
+// Para leer el CSV uso leer_datos de utils.s
+// Para convertir numeros a texto uso int_a_ascii de utils.s
+// Los datos quedan en el arreglo datos[] de utils.s
 // ============================================================
 
 .extern leer_datos
 .extern int_a_ascii
 .extern datos
 
-// ============================================================
-// Textos fijos que van en el archivo de salida
-// ============================================================
 .section .data
 
 nombre_salida:
     .asciz "resultado_media.txt"
 
+// estas son las lineas fijas que siempre van en el resultado
 linea_module:
     .asciz "MODULE=WEIGHTED_MEAN\n"
 linea_module_len = . - linea_module
@@ -40,6 +33,7 @@ linea_total:
     .asciz "TOTAL_VALUES=30\n"
 linea_total_len = . - linea_total
 
+// estos son los "titulos" antes de cada valor calculado
 label_sumx:     .asciz "SUM_X="
 label_sumx_len = . - label_sumx
 
@@ -49,83 +43,64 @@ label_wsum_len = . - label_wsum
 label_mean:     .asciz "WEIGHTED_MEAN="
 label_mean_len = . - label_mean
 
-// ============================================================
-// Memoria sin inicializar
-// ============================================================
 .section .bss
 
-// buffer donde armo todo el texto antes de escribirlo al archivo
+// aqui armo todo el texto antes de escribirlo al archivo
 .comm buffer_salida, 512, 8
 
-// buffers temporales para convertir cada numero a texto
+// buffers para convertir cada numero a texto
 .comm buf_sumx,  32, 8
 .comm buf_wsum,  32, 8
 .comm buf_media, 32, 8
 
-
-// ============================================================
-// Código principal
-// ============================================================
 .section .text
 .global _start
 
 _start:
-
-    // ---------------------------------------------------------
-    // Paso 1: llamo a leer_datos de utils.s con columna 1 = TEMP
-    // Esto abre lecturas.csv, extrae la columna TEMP y la guarda
-    // en el arreglo global datos[] que vive en utils.s
-    // ---------------------------------------------------------
+    // le pido a utils que lea la columna 1 (TEMP) del CSV
+    // despues de esto datos[] ya tiene los 30 valores listos
     mov x0, #1
     bl leer_datos
 
-    // ---------------------------------------------------------
-    // Paso 2: calcular la media ponderada
-    // recorro los 30 datos y voy acumulando:
-    //   x20 = suma simple de todos los datos (SUM_X)
-    //   x22 = suma ponderada Σ(Xi * Wi)
-    //   x23 = suma de pesos Σ(Wi) = 1+2+...+30 = 465
-    //   x21 = indice i (0 a 29)
-    //   x24 = peso actual Wi = i+1 (arranca en 1, sube hasta 30)
-    // ---------------------------------------------------------
+    // inicializo los registros que voy a usar en el calculo
+    // x19 apunta al arreglo datos[]
+    // x20 acumula la suma simple SUM_X
+    // x21 es el indice i que va de 0 a 29
+    // x22 acumula la suma ponderada S(Xi * Wi)
+    // x23 acumula la suma de pesos S(Wi) = 1+2+...+30 = 465
+    // x24 es el peso actual Wi, arranca en 1 y sube hasta 30
     adr x19, datos
-    mov x20, #0             // suma simple
-    mov x21, #0             // indice
-    mov x22, #0             // suma ponderada
-    mov x23, #0             // suma de pesos
-    mov x24, #1             // peso actual, empieza en 1
+    mov x20, #0
+    mov x21, #0
+    mov x22, #0
+    mov x23, #0
+    mov x24, #1
 
 .loop_media:
     cmp x21, #30
     beq .fin_media
 
     ldr x25, [x19, x21, lsl #3]    // cargo datos[i]
-
     add x20, x20, x25              // SUM_X += datos[i]
-
     mul x26, x25, x24              // Xi * Wi
     add x22, x22, x26              // suma_ponderada += Xi * Wi
-
     add x23, x23, x24              // suma_pesos += Wi
-
     add x21, x21, #1               // i++
     add x24, x24, #1               // Wi++
     b .loop_media
 
 .fin_media:
-    // media ponderada = suma_ponderada / suma_pesos
+    // divido la suma ponderada entre la suma de pesos
     udiv x27, x22, x23             // x27 = WEIGHTED_MEAN
 
-    // ---------------------------------------------------------
-    // Paso 3: armar el texto de salida en buffer_salida
-    // x9 va marcando hasta donde he escrito en el buffer
-    // ---------------------------------------------------------
+    // empiezo a armar el texto en buffer_salida
+    // x9 marca hasta donde he escrito
     mov x9, #0
 
     bl .copiar_module
     bl .copiar_total
 
-    // SUM_X=<valor>
+    // escribo SUM_X=valor
     bl .copiar_label_sumx
     mov x0, x20
     adr x1, buf_sumx
@@ -134,7 +109,7 @@ _start:
     bl .copiar_cadena
     bl .copiar_newline
 
-    // WEIGHT_SUM=<valor>
+    // escribo WEIGHT_SUM=valor
     bl .copiar_label_wsum
     mov x0, x23
     adr x1, buf_wsum
@@ -143,7 +118,7 @@ _start:
     bl .copiar_cadena
     bl .copiar_newline
 
-    // WEIGHTED_MEAN=<valor>
+    // escribo WEIGHTED_MEAN=valor
     bl .copiar_label_mean
     mov x0, x27
     adr x1, buf_media
@@ -152,47 +127,42 @@ _start:
     bl .copiar_cadena
     bl .copiar_newline
 
-    // ---------------------------------------------------------
-    // Paso 4: escribir el buffer al archivo resultado_media.txt
-    // ---------------------------------------------------------
+    // creo o sobreescribo el archivo resultado_media.txt
     mov x8, #56             // syscall openat
-    mov x0, #-100           // AT_FDCWD
+    mov x0, #-100           // AT_FDCWD = directorio actual
     adr x1, nombre_salida
-    mov x2, #577            // O_WRONLY | O_CREAT | O_TRUNC
-    mov x3, #0644
+    mov x2, #577            // crear si no existe, borrar contenido anterior
+    mov x3, #0644           // permisos rw-r--r--
     svc #0
-    mov x10, x0             // guardo el fd del archivo
+    mov x10, x0             // guardo el descriptor del archivo
 
-    mov x8, #64             // syscall write
-    mov x0, x10
-    adr x1, buffer_salida
-    mov x2, x9              // cuantos bytes escribi
-    svc #0
-
-    mov x8, #57             // syscall close
-    mov x0, x10
-    svc #0
-
-    // ---------------------------------------------------------
-    // Paso 5: imprimo el resultado en pantalla tambien
-    // ---------------------------------------------------------
+    // escribo el buffer al archivo
     mov x8, #64
-    mov x0, #1              // stdout
+    mov x0, x10
     adr x1, buffer_salida
     mov x2, x9
     svc #0
 
-    // fin del programa
+    // cierro el archivo
+    mov x8, #57
+    mov x0, x10
+    svc #0
+
+    // tambien muestro el resultado en la terminal
+    mov x8, #64
+    mov x0, #1              // 1 = stdout = pantalla
+    adr x1, buffer_salida
+    mov x2, x9
+    svc #0
+
+    // fin del programa con codigo 0 = todo salio bien
     mov x8, #93
     mov x0, #0
     svc #0
 
 
-// ============================================================
-// Funciones auxiliares para copiar texto al buffer_salida
-// Todas usan x9 como posicion actual en el buffer.
-// x9 va creciendo cada vez que escribo un caracter.
-// ============================================================
+// estas funciones copian texto al buffer_salida
+// todas usan x9 como posicion actual, que va creciendo
 
 .copiar_module:
     stp x29, x30, [sp, #-16]!
@@ -274,8 +244,8 @@ _start:
     ldp x29, x30, [sp], #16
     ret
 
+// esta recibe en x0 el puntero al texto que quiero copiar
 .copiar_cadena:
-    // recibe en x0 el puntero al texto que quiero copiar
     stp x29, x30, [sp, #-16]!
     mov x1, x0
     adr x0, buffer_salida
@@ -291,10 +261,11 @@ _start:
     ldp x29, x30, [sp], #16
     ret
 
+// escribe el salto de linea al final de cada valor
 .copiar_newline:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
-    mov w2, #10
+    mov w2, #10             // 10 es el codigo ASCII de '\n'
     strb w2, [x0, x9]
     add x9, x9, #1
     ldp x29, x30, [sp], #16
