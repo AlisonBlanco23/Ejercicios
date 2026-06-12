@@ -3,737 +3,473 @@
 // Integrante 5 - Tendencia Acumulada Avanzada
 // Curso: ACYE1 - Segundo Semestre 2026
 //
-// Lo que hace este modulo:
-//   1. Leo HUM_SUELO_1 (columna 3) con leer_datos de utils.s
-//   2. Copio esos datos a arr_suelo1 antes de que la siguiente
-//      llamada a leer_datos los sobreescriba en datos[]
-//   3. Leo HUM_SUELO_2 (columna 4) con leer_datos
-//   4. Calculo tendencia de HUM_SUELO_1 usando arr_suelo1
-//   5. Calculo tendencia de HUM_SUELO_2 usando datos[]
-//   6. Escribo ambos resultados en resultado_tendencia.txt
+// Variables analizadas:
+//   - HUM_SUELO_1 (columna 3)
+//   - HUM_SUELO_2 (columna 4)
+//
+// Entrada : lecturas.csv
+// Salida  : resultado_tendencia.txt
 //
 // Formulas:
 //   DIF_i    = X_i - X_(i-1)
 //   DIF_ACUM = Suma de todos los DIF_i
-//   Si DIF_ACUM > 0 => TREND=UP
-//   Si DIF_ACUM < 0 => TREND=DOWN
-//   Si DIF_ACUM = 0 => TREND=STABLE
+//   DIF_ACUM > 0 => TREND=UP
+//   DIF_ACUM < 0 => TREND=DOWN
+//   DIF_ACUM = 0 => TREND=STABLE
 //
 // Funciones que uso de utils.s:
-//   leer_datos   -> llena datos[] con la columna que le pido
-//   int_a_ascii  -> convierte numero a texto para escribirlo
-//   datos        -> arreglo compartido con los 30 valores
+//   leer_datos   -> abre el CSV, extrae la columna pedida y llena datos[]
+//   int_a_ascii  -> convierte un entero a texto ASCII
+//   datos        -> arreglo global con los 30 valores leidos
+//
+// Compilar:
+//   aarch64-linux-gnu-as utils.s -o utils.o
+//   aarch64-linux-gnu-as modulo_5_tendencia.s -o modulo_5_tendencia.o
+//   aarch64-linux-gnu-ld utils.o modulo_5_tendencia.o -o modulo_5_tendencia
+//
+// Ejecutar:
+//   qemu-aarch64 ./modulo_5_tendencia
+//   cat resultado_tendencia.txt
 // ============================================================
 
 .extern leer_datos
 .extern int_a_ascii
 .extern datos
 
-// ============================================================
-// Textos fijos del archivo de salida
-// ============================================================
+// ---- Syscalls ---------------------------------------------
+.equ SYS_OPENAT,  56
+.equ SYS_CLOSE,   57
+.equ SYS_WRITE,   64
+.equ SYS_EXIT,    93
+.equ AT_FDCWD,   -100
+.equ O_WRONLY,    1
+.equ O_CREAT,     64
+.equ O_TRUNC,     512
+.equ PERM_644,    0644
+
+.equ N_DATOS,     30
+
+// ===========================================================
+// SECCION DE DATOS
+// ===========================================================
 .section .data
 
-nombre_salida:
-    .asciz "resultado_tendencia.txt"
+archivo_salida:   .asciz "resultado_tendencia.txt"
 
-linea_module:
-    .asciz "MODULE=ADVANCED_TREND\n"
-linea_module_len = . - linea_module
+str_module:       .ascii "MODULE=ADVANCED_TREND\n"
+.equ str_module_len, . - str_module
 
-linea_total:
-    .asciz "TOTAL_VALUES=30\n"
-linea_total_len = . - linea_total
+str_total:        .ascii "TOTAL_VALUES=30\n"
+.equ str_total_len, . - str_total
 
-str_area1:
-    .asciz "AREA=HUM_SUELO_1\n"
-str_area1_len = . - str_area1
+str_sep:          .ascii "---\n"
+.equ str_sep_len, . - str_sep
 
-str_area2:
-    .asciz "AREA=HUM_SUELO_2\n"
-str_area2_len = . - str_area2
+str_area1:        .ascii "AREA=HUM_SUELO_1\n"
+.equ str_area1_len, . - str_area1
 
-str_separador:
-    .asciz "---\n"
-str_separador_len = . - str_separador
+str_area2:        .ascii "AREA=HUM_SUELO_2\n"
+.equ str_area2_len, . - str_area2
 
-label_inc:      .asciz "INCREMENTS="
-label_inc_len = . - label_inc
+str_inc_lbl:      .ascii "INCREMENTS="
+.equ str_inc_lbl_len, . - str_inc_lbl
 
-label_dec:      .asciz "DECREMENTS="
-label_dec_len = . - label_dec
+str_dec_lbl:      .ascii "DECREMENTS="
+.equ str_dec_lbl_len, . - str_dec_lbl
 
-label_mup:      .asciz "MAX_UP_STREAK="
-label_mup_len = . - label_mup
+str_mup_lbl:      .ascii "MAX_UP_STREAK="
+.equ str_mup_lbl_len, . - str_mup_lbl
 
-label_mdn:      .asciz "MAX_DOWN_STREAK="
-label_mdn_len = . - label_mdn
+str_mdn_lbl:      .ascii "MAX_DOWN_STREAK="
+.equ str_mdn_lbl_len, . - str_mdn_lbl
 
-label_acc:      .asciz "ACCUM_DIFF="
-label_acc_len = . - label_acc
+str_acc_lbl:      .ascii "ACCUM_DIFF="
+.equ str_acc_lbl_len, . - str_acc_lbl
 
-str_trend_up:     .asciz "TREND=UP\n"
-str_trend_up_len = . - str_trend_up
+str_trend_up:     .ascii "TREND=UP\n"
+.equ str_trend_up_len, . - str_trend_up
 
-str_trend_down:   .asciz "TREND=DOWN\n"
-str_trend_down_len = . - str_trend_down
+str_trend_down:   .ascii "TREND=DOWN\n"
+.equ str_trend_down_len, . - str_trend_down
 
-str_trend_stable: .asciz "TREND=STABLE\n"
-str_trend_stable_len = . - str_trend_stable
+str_trend_stable: .ascii "TREND=STABLE\n"
+.equ str_trend_stable_len, . - str_trend_stable
 
-// ============================================================
-// Memoria sin inicializar
-// ============================================================
+str_minus:        .ascii "-"
+
+// ===========================================================
+// SECCION BSS
+// ===========================================================
 .section .bss
 
-// buffer mas grande porque escribo dos secciones de resultados
-.comm buffer_salida, 1024, 8
+buf_conv:         .skip 32      // buffer para convertir int a ASCII
 
-// arreglo propio para guardar HUM_SUELO_1
-// lo necesito porque leer_datos sobreescribe datos[] con cada llamada
-.comm arr_suelo1, 240, 8
+// Guardo aqui los datos de suelo1 antes de llamar leer_datos
+// por segunda vez, porque leer_datos sobreescribe datos[]
+arr_suelo1:       .skip 240     // 30 x 8 bytes
 
-// buffers para convertir numeros a texto, dos juegos uno por columna
-.comm buf_inc1,  32, 8
-.comm buf_dec1,  32, 8
-.comm buf_mup1,  32, 8
-.comm buf_mdn1,  32, 8
-.comm buf_acc1,  32, 8
+// Resultados HUM_SUELO_1
+s1_increments:    .skip 8
+s1_decrements:    .skip 8
+s1_max_up:        .skip 8
+s1_max_down:      .skip 8
+s1_accum_diff:    .skip 8
 
-.comm buf_inc2,  32, 8
-.comm buf_dec2,  32, 8
-.comm buf_mup2,  32, 8
-.comm buf_mdn2,  32, 8
-.comm buf_acc2,  32, 8
+// Resultados HUM_SUELO_2
+s2_increments:    .skip 8
+s2_decrements:    .skip 8
+s2_max_up:        .skip 8
+s2_max_down:      .skip 8
+s2_accum_diff:    .skip 8
 
-// ============================================================
-// Codigo principal
-// ============================================================
+fd_out:           .skip 8
+
+// ===========================================================
+// SECCION DE CODIGO
+// ===========================================================
 .section .text
 .global _start
 
+// -----------------------------------------------------------
+// _start - punto de entrada
+// -----------------------------------------------------------
 _start:
+    // 1. Leer HUM_SUELO_1 usando utils.s
+    //    leer_datos abre el CSV, extrae columna 3 y llena datos[]
+    mov  x0,  #3
+    bl   leer_datos
 
-    // ---------------------------------------------------------
-    // Paso 1: leo HUM_SUELO_1 con utils.s
-    // despues de esto datos[] tiene los 30 valores de suelo 1
-    // ---------------------------------------------------------
-    mov x0, #3
-    bl leer_datos
+    // 2. Copiar datos[] a arr_suelo1 antes de que la siguiente
+    //    llamada a leer_datos los sobreescriba
+    adr  x0,  datos
+    adr  x1,  arr_suelo1
+    mov  x2,  #0
+copiar_suelo1:
+    cmp  x2,  #30
+    beq  fin_copiar
+    ldr  x3,  [x0, x2, lsl #3]
+    str  x3,  [x1, x2, lsl #3]
+    add  x2,  x2,  #1
+    b    copiar_suelo1
+fin_copiar:
 
-    // ---------------------------------------------------------
-    // Paso 2: copio datos[] a mi arreglo arr_suelo1
-    // si no hago esto, cuando llame leer_datos para suelo 2
-    // los valores de suelo 1 se pierden para siempre
-    //
-    //   x0 = puntero origen (datos[] de utils)
-    //   x1 = puntero destino (arr_suelo1 mio)
-    //   x2 = contador del 0 al 29
-    // ---------------------------------------------------------
-    adr x0, datos
-    adr x1, arr_suelo1
-    mov x2, #0
+    // 3. Leer HUM_SUELO_2 usando utils.s
+    //    ahora datos[] tiene los valores de suelo 2
+    mov  x0,  #4
+    bl   leer_datos
 
-.loop_copiar:
-    cmp x2, #30
-    beq .fin_copiar
-    ldr x3, [x0, x2, lsl #3]
-    str x3, [x1, x2, lsl #3]
-    add x2, x2, #1
-    b .loop_copiar
+    // 4. Calcular tendencia HUM_SUELO_1
+    adr  x0,  arr_suelo1
+    adr  x1,  s1_increments
+    bl   calcular_tendencia
 
-.fin_copiar:
+    // 5. Calcular tendencia HUM_SUELO_2
+    adr  x0,  datos
+    adr  x1,  s2_increments
+    bl   calcular_tendencia
 
-    // ---------------------------------------------------------
-    // Paso 3: leo HUM_SUELO_2 con utils.s
-    // ahora datos[] tiene los 30 valores de suelo 2
-    // arr_suelo1 tiene guardados los de suelo 1
-    // ---------------------------------------------------------
-    mov x0, #4
-    bl leer_datos
+    // 6. Escribir resultado
+    bl   escribir_resultado
 
-    // ---------------------------------------------------------
-    // Paso 4: calculo tendencia de HUM_SUELO_1 usando arr_suelo1
-    //
-    // registros que uso:
-    //   x19 = puntero al arreglo que estoy analizando
-    //   x20 = indice i, empieza en 1 para comparar con el anterior
-    //   x21 = contador de incrementos
-    //   x22 = contador de decrementos
-    //   x23 = racha de subida actual
-    //   x24 = racha de bajada actual
-    //   x25 = racha maxima de subida
-    //   x26 = racha maxima de bajada
-    //   x27 = diferencia acumulada (puede ser negativa)
-    // ---------------------------------------------------------
-    adr x19, arr_suelo1
-    mov x20, #1
-    mov x21, #0
-    mov x22, #0
-    mov x23, #0
-    mov x24, #0
-    mov x25, #0
-    mov x26, #0
-    mov x27, #0
-
-.loop_tend1:
-    cmp x20, #30
-    beq .fin_tend1
-
-    sub x9,  x20, #1
-    ldr x10, [x19, x9,  lsl #3]    // datos[i-1]
-    ldr x11, [x19, x20, lsl #3]    // datos[i]
-
-    sub x12, x11, x10               // diferencia entre consecutivos
-    add x27, x27, x12               // acumulo la diferencia total
-
-    cmp x12, #0
-    bgt .inc1
-    blt .dec1
-
-    // diferencia 0: reseteo las dos rachas
-    mov x23, #0
-    mov x24, #0
-    b .sig1
-
-.inc1:
-    add x21, x21, #1
-    add x23, x23, #1
-    mov x24, #0
-    cmp x23, x25
-    ble .sig1
-    mov x25, x23                    // nuevo record de racha subida
-    b .sig1
-
-.dec1:
-    add x22, x22, #1
-    add x24, x24, #1
-    mov x23, #0
-    cmp x24, x26
-    ble .sig1
-    mov x26, x24                    // nuevo record de racha bajada
-
-.sig1:
-    add x20, x20, #1
-    b .loop_tend1
-
-.fin_tend1:
-    // guardo los 5 resultados de suelo1 en la pila
-    // los voy a necesitar mas adelante cuando escriba el archivo
-    // reservo 64 bytes alineado a 16
-    sub sp, sp, #64
-    str x21, [sp, #0]               // incrementos s1
-    str x22, [sp, #8]               // decrementos s1
-    str x25, [sp, #16]              // max_up s1
-    str x26, [sp, #24]              // max_down s1
-    str x27, [sp, #32]              // accum_diff s1
-
-    // ---------------------------------------------------------
-    // Paso 5: calculo tendencia de HUM_SUELO_2 usando datos[]
-    // reutilizo los mismos registros x19-x27
-    // ---------------------------------------------------------
-    adr x19, datos
-    mov x20, #1
-    mov x21, #0
-    mov x22, #0
-    mov x23, #0
-    mov x24, #0
-    mov x25, #0
-    mov x26, #0
-    mov x27, #0
-
-.loop_tend2:
-    cmp x20, #30
-    beq .fin_tend2
-
-    sub x9,  x20, #1
-    ldr x10, [x19, x9,  lsl #3]
-    ldr x11, [x19, x20, lsl #3]
-
-    sub x12, x11, x10
-    add x27, x27, x12
-
-    cmp x12, #0
-    bgt .inc2
-    blt .dec2
-
-    mov x23, #0
-    mov x24, #0
-    b .sig2
-
-.inc2:
-    add x21, x21, #1
-    add x23, x23, #1
-    mov x24, #0
-    cmp x23, x25
-    ble .sig2
-    mov x25, x23
-    b .sig2
-
-.dec2:
-    add x22, x22, #1
-    add x24, x24, #1
-    mov x23, #0
-    cmp x24, x26
-    ble .sig2
-    mov x26, x24
-
-.sig2:
-    add x20, x20, #1
-    b .loop_tend2
-
-.fin_tend2:
-    // guardo resultados de suelo2 tambien en la pila
-    str x21, [sp, #40]              // incrementos s2
-    str x22, [sp, #48]              // decrementos s2
-    str x25, [sp, #56]              // max_up s2
-    // max_down y accum de s2 los mantengo en x26 y x27 en registros
-
-    // ---------------------------------------------------------
-    // Paso 6: armo el texto completo en buffer_salida
-    // primero el encabezado, luego suelo 1, separador, luego suelo 2
-    // ---------------------------------------------------------
-    mov x9, #0
-
-    bl .copiar_module
-    bl .copiar_total
-
-    // ---- bloque HUM_SUELO_1 ---------------------------------
-    bl .copiar_area1
-
-    ldr x21, [sp, #0]               // recupero resultados s1
-    ldr x22, [sp, #8]
-    ldr x25, [sp, #16]
-    ldr x28, [sp, #24]              // max_down en x28 para no chocar
-    ldr x27, [sp, #32]              // accum_diff s1
-
-    bl .copiar_label_inc
-    mov x0, x21
-    adr x1, buf_inc1
-    bl int_a_ascii
-    adr x0, buf_inc1
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_dec
-    mov x0, x22
-    adr x1, buf_dec1
-    bl int_a_ascii
-    adr x0, buf_dec1
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_mup
-    mov x0, x25
-    adr x1, buf_mup1
-    bl int_a_ascii
-    adr x0, buf_mup1
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_mdn
-    mov x0, x28
-    adr x1, buf_mdn1
-    bl int_a_ascii
-    adr x0, buf_mdn1
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_acc
-    mov x0, x27
-    cmp x27, #0
-    bge .acc1_pos
-    adr x0, buffer_salida
-    mov w2, #45
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    neg x27, x27
-    mov x0, x27
-.acc1_pos:
-    adr x1, buf_acc1
-    bl int_a_ascii
-    adr x0, buf_acc1
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    ldr x27, [sp, #32]              // recargo para checar el signo
-    cmp x27, #0
-    bgt .trend1_up
-    blt .trend1_down
-    bl .copiar_trend_stable
-    b .bloque2
-.trend1_up:
-    bl .copiar_trend_up
-    b .bloque2
-.trend1_down:
-    bl .copiar_trend_down
-
-.bloque2:
-    bl .copiar_separador
-
-    // ---- bloque HUM_SUELO_2 ---------------------------------
-    bl .copiar_area2
-
-    ldr x21, [sp, #40]              // recupero resultados s2
-    ldr x22, [sp, #48]
-    ldr x25, [sp, #56]
-    // x26 y x27 siguen con max_down y accum_diff de s2 en registros
-
-    bl .copiar_label_inc
-    mov x0, x21
-    adr x1, buf_inc2
-    bl int_a_ascii
-    adr x0, buf_inc2
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_dec
-    mov x0, x22
-    adr x1, buf_dec2
-    bl int_a_ascii
-    adr x0, buf_dec2
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_mup
-    mov x0, x25
-    adr x1, buf_mup2
-    bl int_a_ascii
-    adr x0, buf_mup2
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_mdn
-    mov x0, x26
-    adr x1, buf_mdn2
-    bl int_a_ascii
-    adr x0, buf_mdn2
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    bl .copiar_label_acc
-    mov x0, x27
-    cmp x27, #0
-    bge .acc2_pos
-    adr x0, buffer_salida
-    mov w2, #45
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    neg x27, x27
-    mov x0, x27
-.acc2_pos:
-    adr x1, buf_acc2
-    bl int_a_ascii
-    adr x0, buf_acc2
-    bl .copiar_cadena
-    bl .copiar_newline
-
-    // cargo de nuevo el accum original para checar el signo
-    sub x0, x27, x27                // x0 = 0 como base
-    // el valor ya modificado con neg puede estar positivo, uso x26 como ref
-    // simplemente comparo x27 actual (ya es abs) vs 0 no sirve
-    // necesito saber si el accum2 original era pos o neg
-    // lo guardamos? No, pero si accum2 original era <0 escribimos neg y neg(x27)
-    // para evitar complicaciones, volvemos a leer la tendencia desde x27 actual
-    // si escribimos '-' antes es porque era negativo, si no, era positivo o 0
-    // el truco: si escribimos el '-', x27 es ahora el abs y el trend es DOWN
-    // si no escribimos el '-', x27 sigue siendo el valor y lo comparamos
-    // Solucion limpia: guardar el signo antes de modificar x27
-
-    // re-leer accum2 de la pila... pero no lo guardamos
-    // usamos una variable auxiliar: recuperamos accum_diff2 del stack
-    // En realidad no lo pusimos en stack. Lo mantenemos en x27 antes del neg.
-    // Para solucionarlo correctamente comparo el buf_acc2 primer caracter:
-    // si tiene '-' entonces trend es DOWN, si no, comparamos x27 vs 0
-    adr x0, buf_acc2
-    ldrb w1, [x0]
-    cmp w1, #45                     // 45 = '-'
-    beq .trend2_down
-
-    cmp x27, #0
-    beq .trend2_stable
-    bl .copiar_trend_up
-    b .escribir_archivo
-
-.trend2_down:
-    bl .copiar_trend_down
-    b .escribir_archivo
-
-.trend2_stable:
-    bl .copiar_trend_stable
-
-.escribir_archivo:
-    // libero el espacio de la pila que reserve
-    add sp, sp, #64
-
-    // ---------------------------------------------------------
-    // Paso 7: escribo el buffer en resultado_tendencia.txt
-    // ---------------------------------------------------------
-    mov x8, #56
-    mov x0, #-100
-    adr x1, nombre_salida
-    mov x2, #577
-    mov x3, #0644
-    svc #0
-    mov x10, x0
-
-    mov x8, #64
-    mov x0, x10
-    adr x1, buffer_salida
-    mov x2, x9
-    svc #0
-
-    mov x8, #57
-    mov x0, x10
-    svc #0
-
-    // tambien lo muestro en pantalla
-    mov x8, #64
-    mov x0, #1
-    adr x1, buffer_salida
-    mov x2, x9
-    svc #0
-
-    mov x8, #93
-    mov x0, #0
-    svc #0
+    // 7. Salir
+    mov  x8,  SYS_EXIT
+    mov  x0,  #0
+    svc  0
 
 
-// ============================================================
-// Funciones para copiar texto al buffer_salida
-// Todas usan x9 como posicion actual
-// ============================================================
+// ===========================================================
+// SUBRUTINA: calcular_tendencia
+//
+// Recibe un arreglo de 30 datos y calcula:
+//   incrementos, decrementos, max racha up/down, accum_diff
+//
+// Parametros:
+//   x0 = puntero al arreglo de datos
+//   x1 = puntero al bloque de resultados (5 valores x 8 bytes)
+//
+// Registros:
+//   x19 = arreglo de datos
+//   x20 = bloque de resultados
+//   x21 = indice i (empieza en 1)
+//   x22 = incrementos
+//   x23 = decrementos
+//   x24 = racha_up actual
+//   x25 = racha_down actual
+//   x26 = max_up
+//   x27 = max_down
+//   x28 = accum_diff
+// ===========================================================
+calcular_tendencia:
+    stp  x29, x30, [sp, #-96]!
+    mov  x29, sp
+    stp  x19, x20, [sp, #16]
+    stp  x21, x22, [sp, #32]
+    stp  x23, x24, [sp, #48]
+    stp  x25, x26, [sp, #64]
+    stp  x27, x28, [sp, #80]
 
-.copiar_module:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, linea_module
-.lp_mod:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_mod
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_mod
-.fin_mod:
-    ldp x29, x30, [sp], #16
+    mov  x19, x0
+    mov  x20, x1
+    mov  x21, #1
+    mov  x22, #0
+    mov  x23, #0
+    mov  x24, #0
+    mov  x25, #0
+    mov  x26, #0
+    mov  x27, #0
+    mov  x28, #0
+
+ct_loop:
+    cmp  x21, N_DATOS
+    bge  ct_fin
+
+    sub  x9,  x21, #1
+    ldr  x10, [x19, x9,  lsl #3]   // datos[i-1]
+    ldr  x9,  [x19, x21, lsl #3]   // datos[i]
+    sub  x11, x9,  x10             // DIF_i = datos[i] - datos[i-1]
+    add  x28, x28, x11             // accum_diff += DIF_i
+
+    cmp  x11, #0
+    bgt  ct_incremento
+    blt  ct_decremento
+
+    mov  x24, #0
+    mov  x25, #0
+    b    ct_siguiente
+
+ct_incremento:
+    add  x22, x22, #1
+    add  x24, x24, #1
+    mov  x25, #0
+    cmp  x24, x26
+    ble  ct_siguiente
+    mov  x26, x24
+    b    ct_siguiente
+
+ct_decremento:
+    add  x23, x23, #1
+    add  x25, x25, #1
+    mov  x24, #0
+    cmp  x25, x27
+    ble  ct_siguiente
+    mov  x27, x25
+
+ct_siguiente:
+    add  x21, x21, #1
+    b    ct_loop
+
+ct_fin:
+    str  x22, [x20, #0]
+    str  x23, [x20, #8]
+    str  x26, [x20, #16]
+    str  x27, [x20, #24]
+    str  x28, [x20, #32]
+
+    ldp  x27, x28, [sp, #80]
+    ldp  x25, x26, [sp, #64]
+    ldp  x23, x24, [sp, #48]
+    ldp  x21, x22, [sp, #32]
+    ldp  x19, x20, [sp, #16]
+    ldp  x29, x30, [sp], #96
     ret
 
-.copiar_total:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, linea_total
-.lp_tot:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_tot
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_tot
-.fin_tot:
-    ldp x29, x30, [sp], #16
+
+// ===========================================================
+// SUBRUTINA: escribir_resultado
+//
+// Abre resultado_tendencia.txt y escribe los resultados
+// de HUM_SUELO_1 y HUM_SUELO_2 llamando a escribir_bloque
+// para cada uno.
+// ===========================================================
+escribir_resultado:
+    stp  x29, x30, [sp, #-32]!
+    stp  x19, x20, [sp, #16]
+    mov  x29, sp
+
+    mov  x8,  SYS_OPENAT
+    mov  x0,  AT_FDCWD
+    adr  x1,  archivo_salida
+    mov  x2,  O_WRONLY | O_CREAT | O_TRUNC
+    mov  x3,  PERM_644
+    svc  0
+    cmp  x0,  #0
+    blt  er_fin
+    mov  x19, x0            // x19 = fd del archivo de salida
+
+    adr  x0,  str_module
+    mov  x1,  str_module_len
+    bl   escribir_buf
+
+    adr  x0,  str_total
+    mov  x1,  str_total_len
+    bl   escribir_buf
+
+    // bloque HUM_SUELO_1
+    adr  x0,  str_area1
+    mov  x1,  str_area1_len
+    bl   escribir_buf
+    adr  x20, s1_increments
+    bl   escribir_bloque
+
+    adr  x0,  str_sep
+    mov  x1,  str_sep_len
+    bl   escribir_buf
+
+    // bloque HUM_SUELO_2
+    adr  x0,  str_area2
+    mov  x1,  str_area2_len
+    bl   escribir_buf
+    adr  x20, s2_increments
+    bl   escribir_bloque
+
+    mov  x8,  SYS_CLOSE
+    mov  x0,  x19
+    svc  0
+
+er_fin:
+    ldp  x19, x20, [sp, #16]
+    ldp  x29, x30, [sp], #32
     ret
 
-.copiar_area1:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_area1
-.lp_a1:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_a1
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_a1
-.fin_a1:
-    ldp x29, x30, [sp], #16
+
+// ===========================================================
+// SUBRUTINA: escribir_bloque
+//
+// Escribe los 5 campos de un bloque de resultados al archivo.
+// x19 = fd ya abierto
+// x20 = puntero al bloque [inc, dec, max_up, max_down, accum]
+// ===========================================================
+escribir_bloque:
+    stp  x29, x30, [sp, #-16]!
+    mov  x29, sp
+
+    adr  x0,  str_inc_lbl
+    mov  x1,  str_inc_lbl_len
+    bl   escribir_buf
+    ldr  x0,  [x20, #0]
+    bl   escribir_uint_nl
+
+    adr  x0,  str_dec_lbl
+    mov  x1,  str_dec_lbl_len
+    bl   escribir_buf
+    ldr  x0,  [x20, #8]
+    bl   escribir_uint_nl
+
+    adr  x0,  str_mup_lbl
+    mov  x1,  str_mup_lbl_len
+    bl   escribir_buf
+    ldr  x0,  [x20, #16]
+    bl   escribir_uint_nl
+
+    adr  x0,  str_mdn_lbl
+    mov  x1,  str_mdn_lbl_len
+    bl   escribir_buf
+    ldr  x0,  [x20, #24]
+    bl   escribir_uint_nl
+
+    adr  x0,  str_acc_lbl
+    mov  x1,  str_acc_lbl_len
+    bl   escribir_buf
+    ldr  x0,  [x20, #32]
+    bl   escribir_int_nl    // este maneja negativos
+
+    // TREND segun signo de accum_diff
+    ldr  x0,  [x20, #32]
+    cmp  x0,  #0
+    bgt  eb_up
+    blt  eb_down
+    adr  x0,  str_trend_stable
+    mov  x1,  str_trend_stable_len
+    bl   escribir_buf
+    b    eb_fin
+eb_up:
+    adr  x0,  str_trend_up
+    mov  x1,  str_trend_up_len
+    bl   escribir_buf
+    b    eb_fin
+eb_down:
+    adr  x0,  str_trend_down
+    mov  x1,  str_trend_down_len
+    bl   escribir_buf
+eb_fin:
+    ldp  x29, x30, [sp], #16
     ret
 
-.copiar_area2:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_area2
-.lp_a2:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_a2
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_a2
-.fin_a2:
-    ldp x29, x30, [sp], #16
+
+// ===========================================================
+// SUBRUTINA: escribir_buf
+// Escribe x1 bytes desde x0 al archivo x19
+// ===========================================================
+escribir_buf:
+    stp  x29, x30, [sp, #-16]!
+    mov  x29, sp
+    mov  x8,  SYS_WRITE
+    mov  x2,  x1
+    mov  x1,  x0
+    mov  x0,  x19
+    svc  0
+    ldp  x29, x30, [sp], #16
     ret
 
-.copiar_separador:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_separador
-.lp_sep:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_sep
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_sep
-.fin_sep:
-    ldp x29, x30, [sp], #16
+
+// ===========================================================
+// SUBRUTINA: escribir_uint_nl
+// Convierte x0 (entero sin signo) a texto y escribe + '\n'
+// Usa int_a_ascii de utils.s para la conversion
+// ===========================================================
+escribir_uint_nl:
+    stp  x29, x30, [sp, #-16]!
+    mov  x29, sp
+
+    adr  x1,  buf_conv
+    bl   int_a_ascii        // convierte x0 -> texto en buf_conv
+
+    // calcular longitud del texto convertido
+    adr  x0,  buf_conv
+    mov  x1,  #0
+eun_len:
+    ldrb w2,  [x0, x1]
+    cbz  w2,  eun_escribir
+    add  x1,  x1,  #1
+    b    eun_len
+eun_escribir:
+    // agregar \n al final del buffer
+    mov  w2,  #10
+    strb w2,  [x0, x1]
+    add  x1,  x1,  #1
+
+    bl   escribir_buf
+
+    ldp  x29, x30, [sp], #16
     ret
 
-.copiar_label_inc:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, label_inc
-.lp_linc:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_linc
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_linc
-.fin_linc:
-    ldp x29, x30, [sp], #16
-    ret
 
-.copiar_label_dec:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, label_dec
-.lp_ldec:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_ldec
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_ldec
-.fin_ldec:
-    ldp x29, x30, [sp], #16
-    ret
+// ===========================================================
+// SUBRUTINA: escribir_int_nl
+// Igual que escribir_uint_nl pero maneja numeros negativos.
+// Si el numero es negativo escribe '-' primero y luego el abs
+// ===========================================================
+escribir_int_nl:
+    stp  x29, x30, [sp, #-32]!
+    stp  x19, x20, [sp, #16]
+    mov  x29, sp
 
-.copiar_label_mup:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, label_mup
-.lp_lmup:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_lmup
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_lmup
-.fin_lmup:
-    ldp x29, x30, [sp], #16
-    ret
+    cmp  x0,  #0
+    bge  ein_positivo
 
-.copiar_label_mdn:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, label_mdn
-.lp_lmdn:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_lmdn
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_lmdn
-.fin_lmdn:
-    ldp x29, x30, [sp], #16
-    ret
+    // escribir el signo '-' primero
+    mov  x20, x0
+    neg  x20, x20
+    mov  x8,  SYS_WRITE
+    mov  x0,  x19
+    adr  x1,  str_minus
+    mov  x2,  #1
+    svc  0
+    mov  x0,  x20           // ahora x0 tiene el valor absoluto
 
-.copiar_label_acc:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, label_acc
-.lp_lacc:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_lacc
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_lacc
-.fin_lacc:
-    ldp x29, x30, [sp], #16
-    ret
+ein_positivo:
+    bl   escribir_uint_nl
 
-.copiar_trend_up:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_trend_up
-.lp_tup:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_tup
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_tup
-.fin_tup:
-    ldp x29, x30, [sp], #16
-    ret
-
-.copiar_trend_down:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_trend_down
-.lp_tdn:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_tdn
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_tdn
-.fin_tdn:
-    ldp x29, x30, [sp], #16
-    ret
-
-.copiar_trend_stable:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    adr x1, str_trend_stable
-.lp_tst:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_tst
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_tst
-.fin_tst:
-    ldp x29, x30, [sp], #16
-    ret
-
-.copiar_cadena:
-    // recibe en x0 el puntero al texto que quiero copiar
-    stp x29, x30, [sp, #-16]!
-    mov x1, x0
-    adr x0, buffer_salida
-.lp_cad:
-    ldrb w2, [x1]
-    cmp w2, #0
-    beq .fin_cad
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    add x1, x1, #1
-    b .lp_cad
-.fin_cad:
-    ldp x29, x30, [sp], #16
-    ret
-
-.copiar_newline:
-    stp x29, x30, [sp, #-16]!
-    adr x0, buffer_salida
-    mov w2, #10
-    strb w2, [x0, x9]
-    add x9, x9, #1
-    ldp x29, x30, [sp], #16
+    ldp  x19, x20, [sp, #16]
+    ldp  x29, x30, [sp], #32
     ret
