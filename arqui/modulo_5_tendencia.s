@@ -3,10 +3,11 @@
 // Integrante 5 - Tendencia Acumulada Avanzada
 // Curso: ACYE1 - Vacaciones Junio 2026
 //
-// Analizo las columnas HUM_SUELO_1 (col 3) y HUM_SUELO_2 (col 4)
-// Para cada columna calculo cuantos incrementos y decrementos hay
-// entre datos consecutivos, las rachas mas largas de subida y bajada,
-// y la diferencia acumulada para saber si la tendencia es UP, DOWN o STABLE
+// Analizo la columna seleccionada desde el dashboard (guardada
+// por Python en seleccion.txt). Calculo cuantos incrementos y
+// decrementos hay entre datos consecutivos, las rachas mas
+// largas de subida y bajada, y la diferencia acumulada para
+// saber si la tendencia es UP, DOWN o STABLE.
 //
 // Las formulas que uso son:
 //   DIF_i    = X_i - X_(i-1)
@@ -16,12 +17,14 @@
 //   DIF_ACUM = 0 => TREND=STABLE
 //
 // Para leer el CSV uso leer_datos de utils.s
+// Para saber que columna usar uso leer_columna_seleccion de utils.s
 // Para convertir numeros a texto uso int_a_ascii de utils.s
 // Los datos quedan en el arreglo datos[] de utils.s
 // ============================================================
 
 .extern leer_datos
 .extern int_a_ascii
+.extern leer_columna_seleccion
 .extern datos
 
 // syscalls que necesito para abrir, escribir y cerrar archivos
@@ -45,12 +48,6 @@ str_module:       .ascii "MODULE=ADVANCED_TREND\n"
 .equ str_module_len, . - str_module
 str_total:        .ascii "TOTAL_VALUES=30\n"
 .equ str_total_len, . - str_total
-str_sep:          .ascii "---\n"
-.equ str_sep_len, . - str_sep
-str_area1:        .ascii "AREA=HUM_SUELO_1\n"
-.equ str_area1_len, . - str_area1
-str_area2:        .ascii "AREA=HUM_SUELO_2\n"
-.equ str_area2_len, . - str_area2
 
 // etiquetas antes de cada valor calculado
 str_inc_lbl:      .ascii "INCREMENTS="
@@ -78,67 +75,30 @@ str_minus:        .ascii "-"
 
 buf_conv:         .skip 32      // buffer temporal para convertir numeros a texto
 
-// necesito este arreglo porque leer_datos siempre escribe en datos[]
-// entonces copio suelo1 aqui antes de llamar leer_datos por segunda vez
-arr_suelo1:       .skip 240     // 30 valores x 8 bytes
-
-// aqui guardo los 5 resultados de HUM_SUELO_1
-s1_increments:    .skip 8
-s1_decrements:    .skip 8
-s1_max_up:        .skip 8
-s1_max_down:      .skip 8
-s1_accum_diff:    .skip 8
-
-// aqui guardo los 5 resultados de HUM_SUELO_2
-s2_increments:    .skip 8
-s2_decrements:    .skip 8
-s2_max_up:        .skip 8
-s2_max_down:      .skip 8
-s2_accum_diff:    .skip 8
-
-fd_out:           .skip 8
+// aqui guardo los 5 resultados de la columna seleccionada
+res_increments:   .skip 8
+res_decrements:   .skip 8
+res_max_up:       .skip 8
+res_max_down:     .skip 8
+res_accum_diff:   .skip 8
 
 .section .text
 .global _start
 
 _start:
-    // leo HUM_SUELO_1, utils abre el CSV y llena datos[]
-    mov  x0,  #3
-    bl   leer_datos
+    // pido a utils la columna seleccionada (1=TEMP por defecto)
+    bl   leer_columna_seleccion
+    bl   leer_datos          // datos[] queda con los 30 valores
 
-    // copio datos[] a arr_suelo1 porque cuando llame leer_datos
-    // de nuevo para suelo2, va a sobreescribir datos[] y perderia suelo1
+    // calculo la tendencia de la columna seleccionada
     adr  x0,  datos
-    adr  x1,  arr_suelo1
-    mov  x2,  #0
-copiar_suelo1:
-    cmp  x2,  #30
-    beq  fin_copiar
-    ldr  x3,  [x0, x2, lsl #3]
-    str  x3,  [x1, x2, lsl #3]
-    add  x2,  x2,  #1
-    b    copiar_suelo1
-fin_copiar:
-
-    // ahora leo HUM_SUELO_2, datos[] queda con los valores de suelo2
-    // arr_suelo1 ya tiene guardados los de suelo1
-    mov  x0,  #4
-    bl   leer_datos
-
-    // calculo la tendencia de cada columna por separado
-    adr  x0,  arr_suelo1
-    adr  x1,  s1_increments
-    bl   calcular_tendencia
-
-    adr  x0,  datos
-    adr  x1,  s2_increments
+    adr  x1,  res_increments
     bl   calcular_tendencia
 
     // escribo los resultados al archivo
     bl   escribir_resultado
 
-    // tambien muestro los resultados en la terminal
-    // pongo x19=1 que es stdout y llamo la misma logica de escritura
+    // tambien muestro los resultados en la terminal (stdout = fd 1)
     mov  x19, #1
     bl   imprimir_resultado
 
@@ -149,8 +109,8 @@ fin_copiar:
 
 // ============================================================
 // calcular_tendencia
-// Recibe un arreglo y calcula incrementos, decrementos,
-// rachas maximas y diferencia acumulada
+// Recibe un arreglo de 30 datos y calcula incrementos,
+// decrementos, rachas maximas y diferencia acumulada
 //
 // x0 = arreglo de 30 datos que voy a analizar
 // x1 = donde guardo los 5 resultados
@@ -309,23 +269,8 @@ escribir_contenido:
     mov  x1,  str_total_len
     bl   escribir_buf
 
-    // bloque HUM_SUELO_1
-    adr  x0,  str_area1
-    mov  x1,  str_area1_len
-    bl   escribir_buf
-    adr  x20, s1_increments
-    bl   escribir_bloque
-
-    // separador entre las dos secciones
-    adr  x0,  str_sep
-    mov  x1,  str_sep_len
-    bl   escribir_buf
-
-    // bloque HUM_SUELO_2
-    adr  x0,  str_area2
-    mov  x1,  str_area2_len
-    bl   escribir_buf
-    adr  x20, s2_increments
+    // bloque de la columna seleccionada
+    adr  x20, res_increments
     bl   escribir_bloque
 
     ldp  x19, x20, [sp, #16]
