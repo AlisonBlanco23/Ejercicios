@@ -17,6 +17,7 @@
 
 .extern leer_datos
 .extern int_a_ascii
+.extern leer_columna_seleccion
 .extern datos
 
 .section .data
@@ -57,9 +58,9 @@ label_mean_len = . - label_mean
 .global _start
 
 _start:
-    // le pido a utils que lea la columna 1 (TEMP) del CSV
-    // despues de esto datos[] ya tiene los 30 valores listos
-    mov x0, #1
+    // pido a utils la columna seleccionada desde el dashboard
+    // (leida de seleccion.txt, por defecto 1=TEMP)
+    bl leer_columna_seleccion
     bl leer_datos
 
     // inicializo los registros que voy a usar en el calculo
