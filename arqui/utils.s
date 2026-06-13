@@ -31,6 +31,9 @@
 nombre_csv:
     .asciz "lecturas.csv"
 
+nombre_seleccion:
+    .asciz "seleccion.txt"
+
 error_apertura_msg:
     .ascii "Error: no se pudo abrir lecturas.csv\n"
     .equ error_apertura_msg_len, . - error_apertura_msg
@@ -41,6 +44,7 @@ error_apertura_msg:
 .section .bss
 
 buffer_linea:   .skip 200
+buffer_sel:     .skip 16
 datos:          .skip 240       // 30 enteros x 8 bytes
 .global datos
 fd_entrada:     .skip 8
@@ -59,6 +63,7 @@ buffer_num:     .skip 32
 .global escribir_archivo
 .global int_a_ascii
 .global ascii_a_int
+.global leer_columna_seleccion
 
 // ============================================================
 // FUNCION: abrir_archivo
@@ -190,6 +195,71 @@ leer_datos_error:
     ldp x21, x22, [sp, #32]
     ldp x19, x20, [sp, #16]
     ldp x29, x30, [sp], #64
+    ret
+
+// ============================================================
+// FUNCION: leer_columna_seleccion
+// Lee el archivo seleccion.txt, que contiene un solo numero
+// entero (1-6) indicando que columna del CSV se debe analizar.
+// Si el archivo no existe, esta vacio o el numero es invalido
+// (fuera de 1..6), regresa 1 (TEMP) por defecto.
+// Retorna: x0 = numero de columna seleccionada
+// ============================================================
+leer_columna_seleccion:
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+
+    // abrir seleccion.txt
+    mov x8,  SYS_OPENAT
+    mov x0,  AT_FDCWD
+    adr x1,  nombre_seleccion
+    mov x2,  O_RDONLY
+    mov x3,  0
+    svc 0
+
+    cmp x0,  0
+    blt lcs_default
+
+    mov x19, x0             // descriptor
+
+    // leer hasta 16 bytes
+    mov x8,  SYS_READ
+    mov x0,  x19
+    adr x1,  buffer_sel
+    mov x2,  16
+    svc 0
+    mov x20, x0             // bytes leidos
+
+    // cerrar archivo
+    mov x0,  x19
+    bl  cerrar_archivo
+
+    cmp x20, 0
+    ble lcs_default
+
+    // poner terminador nulo despues de lo leido
+    adr x1,  buffer_sel
+    strb wzr, [x1, x20]
+
+    // convertir a entero
+    adr x0,  buffer_sel
+    bl  ascii_a_int
+
+    // validar rango 1..6
+    cmp x0,  1
+    blt lcs_default
+    cmp x0,  6
+    bgt lcs_default
+
+    b   lcs_fin
+
+lcs_default:
+    mov x0,  1
+
+lcs_fin:
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #32
     ret
 
 // ============================================================
