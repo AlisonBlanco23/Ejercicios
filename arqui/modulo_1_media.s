@@ -78,16 +78,16 @@ _start:
     // --------------------------------------------------------
     ldr x0, [sp]            // x0 = argc
     cmp x0, #2              // hay al menos 1 argumento?
-    blt .usar_default_1     // no -> ir al default
+    blt usar_default_1      // no -> ir al default
 
     ldr x0, [sp, #16]       // x0 = puntero a argv[1] (string "2","3","6"...)
-    bl  ascii_a_int          // convierte el string a numero entero en x0
-    b   .llamar_leer_1       // ir a llamar leer_datos con ese numero
+    bl  ascii_a_int         // convierte el string a numero entero en x0
+    b   llamar_leer_1       // ir a llamar leer_datos con ese numero
 
-.usar_default_1:
+usar_default_1:
     mov x0, #2              // default: columna 2 = TEMP (1-based en nuevo utils)
 
-.llamar_leer_1:
+llamar_leer_1:
     // x0 ya tiene el numero de columna correcto
     // leer_datos llena el arreglo datos[] con los 30 valores de esa columna
     bl leer_datos
@@ -108,9 +108,9 @@ _start:
     mov x23, #0
     mov x24, #1
 
-.loop_media:
+loop_media:
     cmp x21, #30
-    beq .fin_media
+    beq fin_media
 
     ldr x25, [x19, x21, lsl #3]    // cargo datos[i]
     add x20, x20, x25              // SUM_X += datos[i]
@@ -119,9 +119,9 @@ _start:
     add x23, x23, x24              // suma_pesos += Wi
     add x21, x21, #1               // i++
     add x24, x24, #1               // Wi++
-    b .loop_media
+    b loop_media
 
-.fin_media:
+fin_media:
     // MEDIA_PONDERADA = suma_ponderada / suma_pesos
     udiv x27, x22, x23             // x27 = WEIGHTED_MEAN
 
@@ -131,35 +131,35 @@ _start:
     // --------------------------------------------------------
     mov x9, #0
 
-    bl .copiar_module
-    bl .copiar_total
+    bl copiar_module
+    bl copiar_total
 
     // SUM_X=valor
-    bl .copiar_label_sumx
+    bl copiar_label_sumx
     mov x0, x20
     adr x1, buf_sumx
     bl int_a_ascii
     adr x0, buf_sumx
-    bl .copiar_cadena
-    bl .copiar_newline
+    bl copiar_cadena
+    bl copiar_newline
 
     // WEIGHT_SUM=valor
-    bl .copiar_label_wsum
+    bl copiar_label_wsum
     mov x0, x23
     adr x1, buf_wsum
     bl int_a_ascii
     adr x0, buf_wsum
-    bl .copiar_cadena
-    bl .copiar_newline
+    bl copiar_cadena
+    bl copiar_newline
 
     // WEIGHTED_MEAN=valor
-    bl .copiar_label_mean
+    bl copiar_label_mean
     mov x0, x27
     adr x1, buf_media
     bl int_a_ascii
     adr x0, buf_media
-    bl .copiar_cadena
-    bl .copiar_newline
+    bl copiar_cadena
+    bl copiar_newline
 
     // --------------------------------------------------------
     // ESCRIBIR AL ARCHIVO resultado_media.txt
@@ -197,103 +197,103 @@ _start:
 
 // ---- funciones auxiliares para copiar texto al buffer ----
 
-.copiar_module:
+copiar_module:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, linea_module
-.lp_mod:
+lp_mod:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_mod
+    beq fin_mod
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_mod
-.fin_mod:
+    b lp_mod
+fin_mod:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_total:
+copiar_total:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, linea_total
-.lp_tot:
+lp_tot:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_tot
+    beq fin_tot
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_tot
-.fin_tot:
+    b lp_tot
+fin_tot:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_label_sumx:
+copiar_label_sumx:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, label_sumx
-.lp_lsx:
+lp_lsx:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_lsx
+    beq fin_lsx
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_lsx
-.fin_lsx:
+    b lp_lsx
+fin_lsx:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_label_wsum:
+copiar_label_wsum:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, label_wsum
-.lp_lws:
+lp_lws:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_lws
+    beq fin_lws
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_lws
-.fin_lws:
+    b lp_lws
+fin_lws:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_label_mean:
+copiar_label_mean:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, label_mean
-.lp_lmn:
+lp_lmn:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_lmn
+    beq fin_lmn
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_lmn
-.fin_lmn:
+    b lp_lmn
+fin_lmn:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_cadena:
+copiar_cadena:
     stp x29, x30, [sp, #-16]!
     mov x1, x0
     adr x0, buffer_salida
-.lp_cad:
+lp_cad:
     ldrb w2, [x1]
     cmp w2, #0
-    beq .fin_cad
+    beq fin_cad
     strb w2, [x0, x9]
     add x9, x9, #1
     add x1, x1, #1
-    b .lp_cad
-.fin_cad:
+    b lp_cad
+fin_cad:
     ldp x29, x30, [sp], #16
     ret
 
-.copiar_newline:
+copiar_newline:
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     mov w2, #10
