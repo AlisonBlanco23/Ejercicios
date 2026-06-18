@@ -10,5 +10,5 @@ rec:
         b rec
 
 end_rec:
-        mov x0, x10             // return factorial>
+        mov x0, x10             // return factorial(number)
         ret
