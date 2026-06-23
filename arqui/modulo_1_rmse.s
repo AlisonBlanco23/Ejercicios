@@ -15,8 +15,9 @@
 //   RMSE     = sqrt_entera(MSE)
 //
 // Salida (STATUS=OK):
-//   Se escribe tanto a stdout como al archivo resultado_rmse.txt
-//   (creado/truncado en el directorio de trabajo actual):
+//   Se escribe unicamente al archivo resultado_rmse.txt (creado/truncado
+//   en el directorio de trabajo actual). Sin stdout: stdout es exclusivo
+//   del motor en vivo (Componente A), segun acuerdo del equipo.
 //   CALC=RMSE
 //   COLUMN=<col>
 //   WINDOW_START=<linea_inicial>
@@ -27,7 +28,7 @@
 //   STATUS=OK
 //
 // Salida (error):
-//   Igual, a stdout y (si ya se abrio) a resultado_rmse.txt:
+//   Igual, unicamente a resultado_rmse.txt:
 //   CALC=RMSE
 //   STATUS=ERROR
 //   ERROR=<codigo>
@@ -147,13 +148,10 @@ _start:
     //   [sp + 24] = argv[2] (linea_inicial)
     //   [sp + 32] = argv[3] (linea_final)
     //   [sp + 40] = argv[4] (columna)
-    ldr x0, [sp]              // x0 = argc
 
-    cmp x0, #5
-    bne modulo1_error_args
-
-    // abrir (crear/truncar) resultado_rmse.txt ANTES de llamar a
-    // read_column_to_stack, para no chocar con sus registros internos.
+    // abrir (crear/truncar) resultado_rmse.txt ANTES de cualquier otra
+    // cosa, para que cualquier error (incluso de argumentos) pueda
+    // quedar registrado en el archivo, ya que ya no se usa stdout.
     // openat(AT_FDCWD=-100, pathname, flags, mode)
     //   flags = O_WRONLY(1) | O_CREAT(64) | O_TRUNC(512) = 577
     mov x0, #-100
@@ -165,6 +163,11 @@ _start:
 
     ldr x4, =saved_output_fd
     str x0, [x4]              // guardar fd del archivo de salida
+
+    ldr x0, [sp]              // x0 = argc
+
+    cmp x0, #5
+    bne modulo1_error_args
 
     ldr x17, [sp, #16]        // x17 = puntero a nombre de archivo (argv[1])
 
@@ -315,36 +318,22 @@ modulo1_sum_done:
     mov x8, #93
     svc #0
 
-// modulo1_write: escribe (puntero, longitud) tanto a stdout (fd=1)
-// como al archivo resultado_rmse.txt (fd guardado en saved_output_fd).
+// modulo1_write: escribe (puntero, longitud) al archivo resultado_rmse.txt
+// (fd guardado en saved_output_fd). Solo .txt, sin stdout (el stdout es
+// exclusivo del motor en vivo, segun acuerdo del equipo).
 // Entrada: x0 = puntero al texto, x1 = longitud
 // No usa x24-x29 (registros donde el caller mantiene sus valores vivos).
 modulo1_write:
-    str x30, [sp, #-32]!
-    str x0, [sp, #16]          // guardar puntero
-    str x1, [sp, #24]          // guardar longitud
-
-    // 1) escribir a stdout
     mov x2, x1
     mov x1, x0
-    mov x0, #1
-    mov x8, #64
-    svc #0
-
-    // 2) escribir al archivo de salida
     ldr x4, =saved_output_fd
     ldr x0, [x4]
-    ldr x1, [sp, #16]
-    ldr x2, [sp, #24]
     mov x8, #64
     svc #0
-
-    ldr x30, [sp, #0]
-    add sp, sp, #32
     ret
 
 // modulo1_write_ascii_nl: escribe el contenido de ascii_buffer (string
-// terminado en NUL) seguido de un salto de linea, a stdout y al archivo.
+// terminado en NUL) seguido de un salto de linea, solo al archivo.
 // No usa x24-x29.
 modulo1_write_ascii_nl:
     str x30, [sp, #-16]!
@@ -392,44 +381,37 @@ sqrt_entera_fin:
 
 // ---- manejo de errores ----
 
-// modulo1_error_args: ocurre ANTES de abrir resultado_rmse.txt (todavia
-// no se valido siquiera que exista argv[1]), por lo que solo se
-// imprime a stdout, usando write directo (no modulo1_write).
+// modulo1_error_args: el archivo ya esta abierto en este punto (se abre
+// antes de validar argc), por lo que el error tambien queda en el .txt.
 modulo1_error_args:
-    mov x0, #1
-    ldr x1, =msg_calc
-    mov x2, len_msg_calc
-    mov x8, #64
-    svc #0
+    ldr x0, =msg_calc
+    mov x1, len_msg_calc
+    bl modulo1_write
 
-    mov x0, #1
-    ldr x1, =msg_status_error
-    mov x2, len_msg_status_error
-    mov x8, #64
-    svc #0
+    ldr x0, =msg_status_error
+    mov x1, len_msg_status_error
+    bl modulo1_write
 
-    mov x0, #1
-    ldr x1, =msg_err_label
-    mov x2, len_msg_err_label
-    mov x8, #64
-    svc #0
+    ldr x0, =msg_err_label
+    mov x1, len_msg_err_label
+    bl modulo1_write
 
-    mov x0, #1
-    ldr x1, =err_args
-    mov x2, len_err_args
-    mov x8, #64
-    svc #0
+    ldr x0, =err_args
+    mov x1, len_err_args
+    bl modulo1_write
 
-    mov x0, #1
-    ldr x1, =msg_detail_label
-    mov x2, len_msg_detail_label
-    mov x8, #64
-    svc #0
+    ldr x0, =msg_detail_label
+    mov x1, len_msg_detail_label
+    bl modulo1_write
 
-    mov x0, #1
-    ldr x1, =detail_args
-    mov x2, len_detail_args
-    mov x8, #64
+    ldr x0, =detail_args
+    mov x1, len_detail_args
+    bl modulo1_write
+
+    // cerrar el archivo de salida antes de terminar
+    ldr x4, =saved_output_fd
+    ldr x0, [x4]
+    mov x8, #57
     svc #0
 
     mov x0, #1
