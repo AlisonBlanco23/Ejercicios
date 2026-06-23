@@ -24,10 +24,6 @@ _start:
     ldr x1, [x1]
     bl push              // push(val, head)
 
-    mov x0, #10          // val
-    ldr x1, =head        // head
-    ldr x1, [x1]
-    bl push              // push(val, head)
     ldr x0, =head        // print list
     ldr x0, [x0]
     bl print
