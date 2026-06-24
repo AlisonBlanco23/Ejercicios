@@ -1,4 +1,4 @@
-global _start
+.global _start
 
 .data
 float1: .word 0x40200000                // 32-bit float: 2.5
