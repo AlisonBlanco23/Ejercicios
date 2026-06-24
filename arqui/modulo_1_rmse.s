@@ -12,12 +12,16 @@
 //   ERROR_i  = Y_i - IDEAL
 //   ERROR2_i = ERROR_i * ERROR_i
 //   MSE      = suma(ERROR2_i) / N        (division entera truncada)
-//   RMSE     = sqrt_entera(MSE)
+//   RMSE     = raiz_entera(MSE)
 //
 // Salida (STATUS=OK):
 //   Se escribe unicamente al archivo resultado_rmse.txt (creado/truncado
 //   en el directorio de trabajo actual). Sin stdout: stdout es exclusivo
 //   del motor en vivo (Componente A), segun acuerdo del equipo.
+//   El formato de los campos (CALC=, STATUS=, ERROR=, etc.) sigue
+//   exactamente el contrato definido en el enunciado, por lo que NO se
+//   traduce: solo se tradujeron los nombres internos de etiquetas y
+//   variables, no el texto que se imprime.
 //   CALC=RMSE
 //   COLUMN=<col>
 //   WINDOW_START=<linea_inicial>
@@ -41,7 +45,7 @@
 //   Los valores de entrada (linea_inicial, linea_final, columna) se
 //   guardan en .bss ANTES de llamar a read_column_to_stack, y se
 //   recargan desde .bss DESPUES de la llamada.
-//   Para el tramo posterior se usan x24-x27 (utils.s no los toca).
+//   Para el tramo posterior se usan x24-x29 (utils.s no los toca).
 //   int_a_ascii SI preserva x19/x20 (hace stp/ldp), por lo que es seguro
 //   llamarla con datos guardados en otros registros.
 
@@ -50,87 +54,87 @@
 IDEAL:
     .quad 55          // valor ideal de referencia (ajustar segun documentacion del grupo)
 
-output_filename:
+nombre_archivo_salida:
     .asciz "resultado_rmse.txt"
 
-msg_calc:
+texto_calc:
     .ascii "CALC=RMSE\n"
-    len_msg_calc = . - msg_calc
+    len_texto_calc = . - texto_calc
 
-msg_column:
+texto_columna:
     .ascii "COLUMN="
-    len_msg_column = . - msg_column
+    len_texto_columna = . - texto_columna
 
-msg_wstart:
+texto_inicio_ventana:
     .ascii "WINDOW_START="
-    len_msg_wstart = . - msg_wstart
+    len_texto_inicio_ventana = . - texto_inicio_ventana
 
-msg_wend:
+texto_fin_ventana:
     .ascii "WINDOW_END="
-    len_msg_wend = . - msg_wend
+    len_texto_fin_ventana = . - texto_fin_ventana
 
-msg_count:
+texto_cantidad:
     .ascii "COUNT="
-    len_msg_count = . - msg_count
+    len_texto_cantidad = . - texto_cantidad
 
-msg_ideal:
+texto_ideal:
     .ascii "IDEAL="
-    len_msg_ideal = . - msg_ideal
+    len_texto_ideal = . - texto_ideal
 
-msg_rmse:
+texto_rmse:
     .ascii "RMSE="
-    len_msg_rmse = . - msg_rmse
+    len_texto_rmse = . - texto_rmse
 
-msg_status_ok:
+texto_estado_ok:
     .ascii "STATUS=OK\n"
-    len_msg_status_ok = . - msg_status_ok
+    len_texto_estado_ok = . - texto_estado_ok
 
-msg_status_error:
+texto_estado_error:
     .ascii "STATUS=ERROR\n"
-    len_msg_status_error = . - msg_status_error
+    len_texto_estado_error = . - texto_estado_error
 
-msg_err_label:
+texto_etiqueta_error:
     .ascii "ERROR="
-    len_msg_err_label = . - msg_err_label
+    len_texto_etiqueta_error = . - texto_etiqueta_error
 
-msg_detail_label:
+texto_etiqueta_detalle:
     .ascii "DETAIL="
-    len_msg_detail_label = . - msg_detail_label
+    len_texto_etiqueta_detalle = . - texto_etiqueta_detalle
 
-err_args:
+error_args:
     .ascii "INVALID_ARGS\n"
-    len_err_args = . - err_args
+    len_error_args = . - error_args
 
-detail_args:
+detalle_args:
     .ascii "EXPECTED_4_ARGS\n"
-    len_detail_args = . - detail_args
+    len_detalle_args = . - detalle_args
 
-err_insufficient:
+error_datos_insuficientes:
     .ascii "INSUFFICIENT_DATA\n"
-    len_err_insufficient = . - err_insufficient
+    len_error_datos_insuficientes = . - error_datos_insuficientes
 
-detail_insufficient:
+detalle_datos_insuficientes:
     .ascii "RMSE_REQUIRES_AT_LEAST_2_VALUES\n"
-    len_detail_insufficient = . - detail_insufficient
+    len_detalle_datos_insuficientes = . - detalle_datos_insuficientes
 
-newline:
+salto_linea:
     .ascii "\n"
 
 .bss
 
-ascii_buffer:
+buffer_ascii:
     .skip 32
 
 // almacenamiento temporal de los argumentos de entrada, guardados
 // ANTES de llamar a read_column_to_stack (que destruye x19-x23)
-saved_linea_inicial:
+guardado_linea_inicial:
     .skip 8
-saved_linea_final:
+guardado_linea_final:
     .skip 8
-saved_columna:
+guardado_columna:
     .skip 8
 // fd del archivo de salida resultado_rmse.txt (se abre una vez al inicio)
-saved_output_fd:
+guardado_fd_salida:
     .skip 8
 
 .text
@@ -155,19 +159,19 @@ _start:
     // openat(AT_FDCWD=-100, pathname, flags, mode)
     //   flags = O_WRONLY(1) | O_CREAT(64) | O_TRUNC(512) = 577
     mov x0, #-100
-    ldr x1, =output_filename
+    ldr x1, =nombre_archivo_salida
     mov x2, #577
     mov x3, #0644
     mov x8, #56
     svc #0
 
-    ldr x4, =saved_output_fd
+    ldr x4, =guardado_fd_salida
     str x0, [x4]              // guardar fd del archivo de salida
 
     ldr x0, [sp]              // x0 = argc
 
     cmp x0, #5
-    bne modulo1_error_args
+    bne rmse_error_args
 
     ldr x17, [sp, #16]        // x17 = puntero a nombre de archivo (argv[1])
 
@@ -185,11 +189,11 @@ _start:
 
     // guardar argumentos en .bss ANTES de llamar a read_column_to_stack,
     // porque esa rutina destruye x19-x23 (y el resto de x0-x18)
-    ldr x4, =saved_linea_inicial
+    ldr x4, =guardado_linea_inicial
     str x12, [x4]
-    ldr x4, =saved_linea_final
+    ldr x4, =guardado_linea_final
     str x13, [x4]
-    ldr x4, =saved_columna
+    ldr x4, =guardado_columna
     str x11, [x4]
 
     bl read_column_to_stack
@@ -201,10 +205,10 @@ _start:
     mov x26, x3               // x26 = posicion para restaurar stack
 
     cmp x25, #2
-    blt modulo1_error_insufficient
+    blt rmse_error_datos_insuficientes
 
     // recargar argumentos guardados
-    ldr x4, =saved_linea_inicial
+    ldr x4, =guardado_linea_inicial
     ldr x27, [x4]              // x27 = linea_inicial (para salida)
 
     // ---- calcular suma de ERROR2_i ----
@@ -215,9 +219,9 @@ _start:
     mov x5, x24                // x5 = puntero recorrido
     mov x6, #0                // x6 = contador de elementos recorridos
 
-modulo1_sum_loop:
+rmse_ciclo_suma:
     cmp x6, x25
-    bge modulo1_sum_done
+    bge rmse_ciclo_suma_fin
 
     ldr x7, [x5]              // Y_i
     sub x7, x7, x29            // ERROR_i = Y_i - IDEAL
@@ -226,9 +230,9 @@ modulo1_sum_loop:
 
     add x5, x5, #16           // siguiente dato (cada dato ocupa 16 bytes en el stack)
     add x6, x6, #1
-    b modulo1_sum_loop
+    b rmse_ciclo_suma
 
-modulo1_sum_done:
+rmse_ciclo_suma_fin:
     // MSE = suma / N  (division entera truncada)
     udiv x10, x4, x25          // x10 = MSE (valores no negativos, division simple)
 
@@ -236,80 +240,80 @@ modulo1_sum_done:
     // los datos apuntados por x24)
     mov sp, x26
 
-    // RMSE = sqrt_entera(MSE)
+    // RMSE = raiz_entera(MSE)
     mov x0, x10
-    bl sqrt_entera
+    bl raiz_entera
     mov x28, x0                // x28 = RMSE
 
-    // ---- imprimir salida OK (a stdout y a resultado_rmse.txt) ----
-    ldr x0, =msg_calc
-    mov x1, len_msg_calc
-    bl modulo1_write
+    // ---- escribir salida OK a resultado_rmse.txt ----
+    ldr x0, =texto_calc
+    mov x1, len_texto_calc
+    bl rmse_escribir
 
-    ldr x0, =msg_column
-    mov x1, len_msg_column
-    bl modulo1_write
+    ldr x0, =texto_columna
+    mov x1, len_texto_columna
+    bl rmse_escribir
 
-    ldr x4, =saved_columna
+    ldr x4, =guardado_columna
     ldr x4, [x4]
     mov x0, x4
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_wstart
-    mov x1, len_msg_wstart
-    bl modulo1_write
+    ldr x0, =texto_inicio_ventana
+    mov x1, len_texto_inicio_ventana
+    bl rmse_escribir
 
     mov x0, x27
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_wend
-    mov x1, len_msg_wend
-    bl modulo1_write
+    ldr x0, =texto_fin_ventana
+    mov x1, len_texto_fin_ventana
+    bl rmse_escribir
 
-    ldr x4, =saved_linea_final
+    ldr x4, =guardado_linea_final
     ldr x4, [x4]
     mov x0, x4
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_count
-    mov x1, len_msg_count
-    bl modulo1_write
+    ldr x0, =texto_cantidad
+    mov x1, len_texto_cantidad
+    bl rmse_escribir
 
     mov x0, x25
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_ideal
-    mov x1, len_msg_ideal
-    bl modulo1_write
+    ldr x0, =texto_ideal
+    mov x1, len_texto_ideal
+    bl rmse_escribir
 
     mov x0, x29
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_rmse
-    mov x1, len_msg_rmse
-    bl modulo1_write
+    ldr x0, =texto_rmse
+    mov x1, len_texto_rmse
+    bl rmse_escribir
 
     mov x0, x28
-    ldr x1, =ascii_buffer
+    ldr x1, =buffer_ascii
     bl int_a_ascii
-    bl modulo1_write_ascii_nl
+    bl rmse_escribir_ascii_nl
 
-    ldr x0, =msg_status_ok
-    mov x1, len_msg_status_ok
-    bl modulo1_write
+    ldr x0, =texto_estado_ok
+    mov x1, len_texto_estado_ok
+    bl rmse_escribir
 
     // cerrar el archivo de salida antes de terminar
-    ldr x4, =saved_output_fd
+    ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
     svc #0
@@ -318,62 +322,62 @@ modulo1_sum_done:
     mov x8, #93
     svc #0
 
-// modulo1_write: escribe (puntero, longitud) al archivo resultado_rmse.txt
-// (fd guardado en saved_output_fd). Solo .txt, sin stdout (el stdout es
-// exclusivo del motor en vivo, segun acuerdo del equipo).
+// rmse_escribir: escribe (puntero, longitud) al archivo resultado_rmse.txt
+// (fd guardado en guardado_fd_salida). Solo .txt, sin stdout (el stdout
+// es exclusivo del motor en vivo, segun acuerdo del equipo).
 // Entrada: x0 = puntero al texto, x1 = longitud
 // No usa x24-x29 (registros donde el caller mantiene sus valores vivos).
-modulo1_write:
+rmse_escribir:
     mov x2, x1
     mov x1, x0
-    ldr x4, =saved_output_fd
+    ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #64
     svc #0
     ret
 
-// modulo1_write_ascii_nl: escribe el contenido de ascii_buffer (string
+// rmse_escribir_ascii_nl: escribe el contenido de buffer_ascii (string
 // terminado en NUL) seguido de un salto de linea, solo al archivo.
 // No usa x24-x29.
-modulo1_write_ascii_nl:
+rmse_escribir_ascii_nl:
     str x30, [sp, #-16]!
-    ldr x11, =ascii_buffer
+    ldr x11, =buffer_ascii
 
-modulo1_write_strlen:
+rmse_calcular_longitud:
     ldrb w12, [x11], #1
     cmp w12, #0
-    bne modulo1_write_strlen
+    bne rmse_calcular_longitud
 
     sub x11, x11, #1
-    ldr x12, =ascii_buffer
+    ldr x12, =buffer_ascii
     sub x1, x11, x12           // longitud de la cadena
 
-    ldr x0, =ascii_buffer
-    bl modulo1_write
+    ldr x0, =buffer_ascii
+    bl rmse_escribir
 
-    ldr x0, =newline
+    ldr x0, =salto_linea
     mov x1, #1
-    bl modulo1_write
+    bl rmse_escribir
 
     ldr x30, [sp], #16
     ret
 
-// sqrt_entera: raiz cuadrada entera truncada
+// raiz_entera: raiz cuadrada entera truncada
 // Mismo algoritmo dado en clase, convertido a subrutina (bl/ret en vez
 // de _start/svc exit) para poder llamarlo desde dentro del modulo.
 // x0 = numero de entrada, x0 = resultado
-sqrt_entera:
+raiz_entera:
     mov x1, x0        // x1 = numero del que se busca raiz (se preserva)
     mov x4, #1        // x4 = iterador (candidato a raiz)
 
-sqrt_entera_loop:
+raiz_entera_ciclo:
     mul x2, x4, x4    // x2 = x4 * x4
     cmp x2, x1        // x2 > x1 ?
-    bgt sqrt_entera_fin
+    bgt raiz_entera_fin
     add x4, x4, #1
-    b sqrt_entera_loop
+    b raiz_entera_ciclo
 
-sqrt_entera_fin:
+raiz_entera_fin:
     // el add anterior siempre nos deja una posicion arriba del
     // resultado correcto, por eso restamos uno
     sub x0, x4, #1
@@ -381,35 +385,35 @@ sqrt_entera_fin:
 
 // ---- manejo de errores ----
 
-// modulo1_error_args: el archivo ya esta abierto en este punto (se abre
+// rmse_error_args: el archivo ya esta abierto en este punto (se abre
 // antes de validar argc), por lo que el error tambien queda en el .txt.
-modulo1_error_args:
-    ldr x0, =msg_calc
-    mov x1, len_msg_calc
-    bl modulo1_write
+rmse_error_args:
+    ldr x0, =texto_calc
+    mov x1, len_texto_calc
+    bl rmse_escribir
 
-    ldr x0, =msg_status_error
-    mov x1, len_msg_status_error
-    bl modulo1_write
+    ldr x0, =texto_estado_error
+    mov x1, len_texto_estado_error
+    bl rmse_escribir
 
-    ldr x0, =msg_err_label
-    mov x1, len_msg_err_label
-    bl modulo1_write
+    ldr x0, =texto_etiqueta_error
+    mov x1, len_texto_etiqueta_error
+    bl rmse_escribir
 
-    ldr x0, =err_args
-    mov x1, len_err_args
-    bl modulo1_write
+    ldr x0, =error_args
+    mov x1, len_error_args
+    bl rmse_escribir
 
-    ldr x0, =msg_detail_label
-    mov x1, len_msg_detail_label
-    bl modulo1_write
+    ldr x0, =texto_etiqueta_detalle
+    mov x1, len_texto_etiqueta_detalle
+    bl rmse_escribir
 
-    ldr x0, =detail_args
-    mov x1, len_detail_args
-    bl modulo1_write
+    ldr x0, =detalle_args
+    mov x1, len_detalle_args
+    bl rmse_escribir
 
     // cerrar el archivo de salida antes de terminar
-    ldr x4, =saved_output_fd
+    ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
     svc #0
@@ -418,38 +422,38 @@ modulo1_error_args:
     mov x8, #93
     svc #0
 
-// modulo1_error_insufficient: ocurre DESPUES de abrir el archivo, por lo
-// que aqui si se usa modulo1_write para que el error tambien quede
-// registrado en resultado_rmse.txt.
-modulo1_error_insufficient:
+// rmse_error_datos_insuficientes: ocurre DESPUES de abrir el archivo,
+// por lo que aqui si se usa rmse_escribir para que el error tambien
+// quede registrado en resultado_rmse.txt.
+rmse_error_datos_insuficientes:
     mov sp, x26
 
-    ldr x0, =msg_calc
-    mov x1, len_msg_calc
-    bl modulo1_write
+    ldr x0, =texto_calc
+    mov x1, len_texto_calc
+    bl rmse_escribir
 
-    ldr x0, =msg_status_error
-    mov x1, len_msg_status_error
-    bl modulo1_write
+    ldr x0, =texto_estado_error
+    mov x1, len_texto_estado_error
+    bl rmse_escribir
 
-    ldr x0, =msg_err_label
-    mov x1, len_msg_err_label
-    bl modulo1_write
+    ldr x0, =texto_etiqueta_error
+    mov x1, len_texto_etiqueta_error
+    bl rmse_escribir
 
-    ldr x0, =err_insufficient
-    mov x1, len_err_insufficient
-    bl modulo1_write
+    ldr x0, =error_datos_insuficientes
+    mov x1, len_error_datos_insuficientes
+    bl rmse_escribir
 
-    ldr x0, =msg_detail_label
-    mov x1, len_msg_detail_label
-    bl modulo1_write
+    ldr x0, =texto_etiqueta_detalle
+    mov x1, len_texto_etiqueta_detalle
+    bl rmse_escribir
 
-    ldr x0, =detail_insufficient
-    mov x1, len_detail_insufficient
-    bl modulo1_write
+    ldr x0, =detalle_datos_insuficientes
+    mov x1, len_detalle_datos_insuficientes
+    bl rmse_escribir
 
     // cerrar el archivo de salida antes de terminar
-    ldr x4, =saved_output_fd
+    ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
     svc #0
