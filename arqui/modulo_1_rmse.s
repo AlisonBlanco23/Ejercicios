@@ -6,7 +6,7 @@
 //   ERROR_i  = Y_i - IDEAL
 //   ERROR2_i = ERROR_i * ERROR_i
 //   MSE      = suma(ERROR2_i) / N
-//   RMSE     = raiz_entera(MSE)
+//   RMSE     = sqrt_entera(MSE)
 
 .data
 
@@ -118,6 +118,8 @@ _start:
     cmp x0, #5
     bne rmse_error_args
 
+    ldr x17, [sp, #16]        // Puntero a nombre de archivo
+
     ldr x0, [sp, #24]         // linea_inicial (string)
     bl ascii_a_int
     mov x12, x0               // Guarda linea_inicial
@@ -171,7 +173,7 @@ rmse_ciclo_suma:
     b rmse_ciclo_suma
 
 rmse_ciclo_suma_fin:
-    // MSE = suma / N  (division entera truncada)
+    // MSE = suma / N 
     udiv x10, x4, x25          // MSE (valores no negativos, division simple)
 
     mov sp, x26
