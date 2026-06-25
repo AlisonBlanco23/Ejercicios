@@ -1,13 +1,16 @@
 // Alison Melysa Pérez Blanco - Media Aritmetica Ponderada
 
 // La formula que uso es:
-//   MEDIA_PONDERADA = S(Xi * Wi) / SWi   donde Wi va de 1 a N
+// MEDIA_PONDERADA = S(Xi * Wi) / SWi   donde Wi va de 1 a N
 
-// Para leer el CSV uso read_column_to_stack de utils.s (deja los
-// datos guardados en el stack, no en un arreglo fijo como antes)
-// Para convertir numeros a texto uso int_a_ascii de utils.s
+// Para leer el CSV uso read_column_to_stack de utils.s. Ahora recibe
+// columna (x11), linea inicial (x12) y linea final (x13), y deja los
+// datos guardados en el stack con cantidad variable N.
+// Para convertir los argumentos de texto (columna, linea inicial, linea
+// final) a numero uso ascii_a_int de utils.s.
+// Para convertir numeros a texto uso int_a_ascii de utils.s.
 // La cantidad real de datos leidos viene en x2 al regresar de
-// read_column_to_stack (ya no se asume 30 datos fijos)
+// read_column_to_stack.
 
 // DECLARACION DE SIMBOLOS EXTERNOS
 // Estas funciones estan definidas en utils.s
@@ -15,8 +18,9 @@
 // al momento de ensamblar y enlazar el proyecto completo
 
 // ------------------------------------------------------------
-.extern read_column_to_stack   // Funcion que lee la columna del CSV y guarda los datos en el stack
-.extern int_a_ascii            // Funcion que convierte un entero a string ASCII
+.extern read_column_to_stack   // Lee la columna del CSV en el rango [linea_inicial, linea_final] y guarda los datos en el stack
+.extern int_a_ascii            // Convierte un entero a string ASCII (para escribir resultados)
+.extern ascii_a_int            // Convierte texto a entero
 // ------------------------------------------------------------
 // SECCION .data
 // Aqui van todas las cadenas y constantes que tienen valor
@@ -40,13 +44,9 @@ linea_module_len = . - linea_module // El punto . significa "la posición actual
 // Calcula cuantos bytes ocupa el texto (posicion actual menos posicion inicial)
 // Se necesita para decirle al sistema operativo cuantos caracteres escribir
 
-// CAMBIO 1: ya no se usa texto fijo "TOTAL_VALUES=30\n"
-// porque ahora N es variable segun el rango leido del CSV.
-// Se usa un label "TOTAL_VALUES=" y el numero se genera dinamicamente.
-label_total:    .asciz "TOTAL_VALUES="
+label_total:     .asciz "TOTAL_VALUES="
 label_total_len = . - label_total
 
-// Sin \n porque el numero se pega en la misma linea:
 label_sumx:     .asciz "SUM_X="
 label_sumx_len = . - label_sumx
 
@@ -56,13 +56,28 @@ label_wsum_len = . - label_wsum
 label_mean:     .asciz "WEIGHTED_MEAN="
 label_mean_len = . - label_mean
 
+label_column:    .asciz "COLUMN="
+label_column_len = . - label_column
+
+label_wstart:    .asciz "WINDOW_START="
+label_wstart_len = . - label_wstart
+
+label_wend:      .asciz "WINDOW_END="
+label_wend_len = . - label_wend
+
+label_status:    .asciz "STATUS=OK\n"
+label_status_len = . - label_status
+
 .section .bss               // Reservar espacio vacio en memoria 
 
 buffer_salida:  .skip 512   // Reserva ese espacio vacio para el archivo de salida (bytes)
-buf_total:  .skip 32        // CAMBIO 2: nuevo buffer para convertir N a texto
+buf_total:  .skip 32
 buf_sumx:   .skip 32
 buf_wsum:   .skip 32
 buf_media:  .skip 32
+buf_column:  .skip 32
+buf_wstart:  .skip 32
+buf_wend:    .skip 32
 // Espacio temporal donde se convierte cada numero a texto 
 
 .section .text             // Inicio codigo ejecutable 
@@ -71,25 +86,25 @@ buf_media:  .skip 32
 _start:                   // Es lo primero que se ejecuta
 
     // --------------------------------------------------------
-    // Lectura de argv[1], argv[2], argv[3]: columna, linea inicial
-    // y linea final que manda Python (o que se pasan por consola).
-    // Al arrancar el programa, [sp] tiene argc, [sp+16] tiene
-    // argv[1], [sp+24] tiene argv[2] y [sp+32] tiene argv[3]
+    // Archivo_entrada linea_inicial linea_final columna_sensor
     // --------------------------------------------------------
 
-    ldr x0, [sp, #16]    // argv[1] = columna
-    bl  ascii_a_int      // Convierte el string a numero entero en x0
-    mov x11, x0          // x11 = columna seleccionada
+    ldr x9, [sp, #16]        // Archivo entrada
 
-    ldr x0, [sp, #24]    // argv[2] = linea inicial
+    ldr x0, [sp, #24]        // Linea inicial
     bl  ascii_a_int
-    mov x12, x0          // x12 = linea inicial
+    mov x12, x0              // Guarda linea inicial
 
-    ldr x0, [sp, #32]    // argv[3] = linea final
+    ldr x0, [sp, #32]        // Linea final
     bl  ascii_a_int
-    mov x13, x0          // x13 = linea final
+    mov x13, x0              // Guarda linea final
+
+    ldr x0, [sp, #40]        // Columna sensor
+    bl  ascii_a_int
+    mov x11, x0              // Columna seleccionada
 
     bl read_column_to_stack
+
     // Al regresar de read_column_to_stack:
     // x0 = direccion del ULTIMO dato leido (el mas reciente, quedo arriba en el stack)
     // x1 = limite superior, una posicion arriba de donde quedo el primer dato leido
@@ -98,17 +113,16 @@ _start:                   // Es lo primero que se ejecuta
     mov x28, x3          // guardo en x28 donde restaurar el stack al terminar
     sub x19, x1, #16     // x19 = direccion del primer dato leido (cada dato ocupa 16 bytes en el stack)
 
-    // CAMBIO 3: validar que haya al menos 1 dato antes de calcular
-    // cualquier cosa. Esto evita division entre cero mas adelante
-    // (udiv x27, x22, x23) si el rango pedido no trajo datos.
+
+    // Si no hay datos en el rango pedido, salir antes de dividir entre 0 mas adelante
     cmp x2, #1
     blt error_datos_insuficientes
 
     // --------------------------------------------------------
-    // Calculo de media ponderada con pesos Wi = 1, 2, 3 ... N
+    // Calculo de media ponderada con pesos Wi = 1, 2, 3 ... 30
     // x19 = puntero al dato actual dentro del stack
     // x20 = SUM_X  (suma simple de todos los datos) (no sirve en la formula)
-    // x21 = indice i, va de 0 a N-1, indica en que dato voy
+    // x21 = indice i, va de 0 a 29, indica en que dato voy
     // x22 = suma_ponderada S(Xi * Wi)
     // x23 = suma_pesos S(Wi)
     // x24 = peso actual Wi, arranca en 1
@@ -124,7 +138,7 @@ _start:                   // Es lo primero que se ejecuta
     mov x24, #1
 
 loop_media:
-    cmp x21, x2                    // Compara x21 contra la cantidad real de datos (N variable, ya no #30 fijo)
+    cmp x21, x2                    // Compara el x21 contra la cantidad real de datos
     beq fin_media                  // Salta a esto si fueron iguales
 
     ldr x25, [x19]                 // x25 guarda el dato actual
@@ -152,17 +166,47 @@ fin_media:
     mov x14, #0              // x14 registro que lleva la cuenta de cuántos bytes se han escrito en buffer_salida
     // Empieza en 0 porque esta vacio y siempre apunta al final de lo que se escribio
 
-    mov x9, x2                // CAMBIO 4b: guardamos N en x9 ANTES de llamar funciones auxiliares,
-    // porque copiar_module/copiar_label_total usan w2 internamente y pisarian x2.
+    mov x9, x2               // Se guarda N aqui
+
+    mov x16, x11            // Guardamos columna 
+    mov x17, x12            // Guardamos linea inicial
+    mov x15, x13            // Guardamos linea final
 
     bl copiar_module        // texto fijo de module
-
-    // CAMBIO 4: TOTAL_VALUES=N (dinamico, ya no fijo en 30)
+    
+    // TOTAL_VALUES=N 
     bl copiar_label_total
-    mov x0, x9               // x9 = N, copia segura que no se destruyo
+    mov x0, x9              // x9 = N
     adr x1, buf_total
     bl int_a_ascii
     adr x0, buf_total
+    bl copiar_cadena
+    bl copiar_newline
+
+    // COLUMN=columna
+    bl copiar_label_column
+    mov x0, x16
+    adr x1, buf_column
+    bl int_a_ascii
+    adr x0, buf_column
+    bl copiar_cadena
+    bl copiar_newline
+
+    // WINDOW_START=linea_inicial
+    bl copiar_label_wstart
+    mov x0, x17
+    adr x1, buf_wstart
+    bl int_a_ascii
+    adr x0, buf_wstart
+    bl copiar_cadena
+    bl copiar_newline
+
+    // WINDOW_END=linea_final
+    bl copiar_label_wend
+    mov x0, x15
+    adr x1, buf_wend
+    bl int_a_ascii
+    adr x0, buf_wend
     bl copiar_cadena
     bl copiar_newline
 
@@ -196,6 +240,9 @@ fin_media:
     adr x0, buf_media
     bl copiar_cadena
     bl copiar_newline
+
+    // STATUS=OK
+     bl copiar_label_status
 
     // --------------------------------------------------------
     // Escribir el arcgivo de resultado_media.txt
@@ -234,15 +281,11 @@ fin_media:
     mov x0, #0  // El 0 significa que el programa terminó con éxito
     svc #0
 
-// CAMBIO 5: rutina de error si no hay suficientes datos (N < 1).
-// Se restaura el stack que habia reservado read_column_to_stack
-// y se termina el programa con codigo de error.
-error_datos_insuficientes:
-    mov sp, x28               // restaurar el stack reservado por read_column_to_stack
-    mov x8, #93               // syscall exit
-    mov x0, #1                // codigo de salida 1 = error
+error_datos_insuficientes: // se llega aqui si el rango pedido no trajo ningun dato (N=0)
+    mov sp, x28            // restaurar el stack que habia reservado read_column_to_stack
+    mov x8, #93            // syscall exit
+    mov x0, #1             // codigo de salida 1 = error
     svc #0
-
 
 // Funciones auxiliares para copiar texto al buffer
 
@@ -265,9 +308,7 @@ fin_mod:
     ldp x29, x30, [sp], #16   // ldp recupera registros, sube 16 bytes 
     ret                       // return Ve a la dirección que tiene x30 y continúa ejecutando desde ahí
 
-// CAMBIO 6: copiar_total se renombro a copiar_label_total y ahora
-// copia "TOTAL_VALUES=" (sin numero) en vez del texto fijo con 30.
-copiar_label_total:            // Copia TOTAL_VALUES=
+copiar_label_total:           // copia el texto "TOTAL_VALUES=" al buffer de salida
     stp x29, x30, [sp, #-16]!
     adr x0, buffer_salida
     adr x1, label_total
@@ -328,6 +369,74 @@ lp_lmn:
     add x1, x1, #1
     b lp_lmn
 fin_lmn:
+    ldp x29, x30, [sp], #16
+    ret
+
+// Copia COLUMN=
+copiar_label_column:
+    stp x29, x30, [sp, #-16]!
+    adr x0, buffer_salida
+    adr x1, label_column
+lp_col:
+    ldrb w2, [x1]
+    cmp w2, #0
+    beq fin_col
+    strb w2, [x0, x14]
+    add x14, x14, #1
+    add x1, x1, #1
+    b lp_col
+fin_col:
+    ldp x29, x30, [sp], #16
+    ret
+
+// Copia WINDOW_START=
+copiar_label_wstart:
+    stp x29, x30, [sp, #-16]!
+    adr x0, buffer_salida
+    adr x1, label_wstart
+lp_wst:
+    ldrb w2, [x1]
+    cmp w2, #0
+    beq fin_wst
+    strb w2, [x0, x14]
+    add x14, x14, #1
+    add x1, x1, #1
+    b lp_wst
+fin_wst:
+    ldp x29, x30, [sp], #16
+    ret
+
+// Copia WINDOW_END=
+copiar_label_wend:
+    stp x29, x30, [sp, #-16]!
+    adr x0, buffer_salida
+    adr x1, label_wend
+lp_wen:
+    ldrb w2, [x1]
+    cmp w2, #0
+    beq fin_wen
+    strb w2, [x0, x14]
+    add x14, x14, #1
+    add x1, x1, #1
+    b lp_wen
+fin_wen:
+    ldp x29, x30, [sp], #16
+    ret
+
+// Copia STATUS=OK 
+copiar_label_status:
+    stp x29, x30, [sp, #-16]!
+    adr x0, buffer_salida
+    adr x1, label_status
+lp_sta:
+    ldrb w2, [x1]
+    cmp w2, #0
+    beq fin_sta
+    strb w2, [x0, x14]
+    add x14, x14, #1
+    add x1, x1, #1
+    b lp_sta
+fin_sta:
     ldp x29, x30, [sp], #16
     ret
 

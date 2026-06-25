@@ -118,7 +118,7 @@ _start:
     cmp x0, #5
     bne rmse_error_args
 
-    ldr x17, [sp, #16]        // Puntero a nombre de archivo
+    ldr x9, [sp, #16]         // Puntero a nombre de archivo
 
     ldr x0, [sp, #24]         // linea_inicial (string)
     bl ascii_a_int
