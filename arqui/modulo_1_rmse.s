@@ -118,7 +118,7 @@ _start:
     cmp x0, #5
     bne rmse_error_args
 
-    ldr x17, [sp, #16]        // Puntero a nombre de archivo
+    ldr x9, [sp, #16]         // x9 = puntero a nombre de archivo (para utils)
 
     ldr x0, [sp, #24]         // linea_inicial (string)
     bl ascii_a_int
@@ -173,8 +173,7 @@ rmse_ciclo_suma:
     b rmse_ciclo_suma
 
 rmse_ciclo_suma_fin:
-    // MSE = suma / N 
-    udiv x10, x4, x25          // MSE (valores no negativos, division simple)
+    udiv x10, x4, x25          // MSE
 
     mov sp, x26
 
@@ -250,7 +249,6 @@ rmse_ciclo_suma_fin:
     mov x1, len_texto_estado_ok
     bl rmse_escribir
 
-    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
@@ -280,7 +278,7 @@ rmse_calcular_longitud:
 
     sub x11, x11, #1
     ldr x12, =buffer_ascii
-    sub x1, x11, x12           // longitud de la cadena
+    sub x1, x11, x12
 
     ldr x0, =buffer_ascii
     bl rmse_escribir
@@ -293,8 +291,8 @@ rmse_calcular_longitud:
     ret
 
 raiz_entera:
-    mov x1, x0        // Numero del que se busca raiz (se preserva)
-    mov x4, #1        // Iterador (candidato a raiz)
+    mov x1, x0
+    mov x4, #1
 
 raiz_entera_ciclo:
     mul x2, x4, x4
@@ -334,7 +332,6 @@ rmse_error_args:
     mov x1, len_detalle_args
     bl rmse_escribir
 
-    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
@@ -371,7 +368,6 @@ rmse_error_datos_insuficientes:
     mov x1, len_detalle_datos_insuficientes
     bl rmse_escribir
 
-    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
