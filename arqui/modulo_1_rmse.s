@@ -84,6 +84,7 @@ salto_linea:
 buffer_ascii:
     .skip 32
 
+// almacenamiento temporal de los argumentos de entrada, guardados
 guardado_linea_inicial:
     .skip 8
 guardado_linea_final:
@@ -91,8 +92,6 @@ guardado_linea_final:
 guardado_columna:
     .skip 8
 guardado_fd_salida:
-    .skip 8
-guardado_stdout:
     .skip 8
 
 .text
@@ -119,19 +118,19 @@ _start:
     cmp x0, #5
     bne rmse_error_args
 
-    ldr x9, [sp, #16]
+    ldr x17, [sp, #16]        // Puntero a nombre de archivo
 
-    ldr x0, [sp, #24]
+    ldr x0, [sp, #24]         // linea_inicial (string)
     bl ascii_a_int
-    mov x12, x0
+    mov x12, x0               // Guarda linea_inicial
 
-    ldr x0, [sp, #32]
+    ldr x0, [sp, #32]         // linea_final (string)
     bl ascii_a_int
-    mov x13, x0
+    mov x13, x0               // Guarda linea_final
 
-    ldr x0, [sp, #40]
+    ldr x0, [sp, #40]         // columna (string)
     bl ascii_a_int
-    mov x11, x0
+    mov x11, x0               // Guarda columna_sensor
 
     ldr x4, =guardado_linea_inicial
     str x12, [x4]
@@ -140,40 +139,11 @@ _start:
     ldr x4, =guardado_columna
     str x11, [x4]
 
-    // duplicar stdout original en un fd nuevo para poder restaurarlo despues
-    mov x0, #1
-    mov x1, #-1
-    mov x8, #23
-    svc #0
-    ldr x4, =guardado_stdout
-    str x0, [x4]
-
-    // redirigir stdout (fd 1) al archivo de salida via dup2
-    ldr x4, =guardado_fd_salida
-    ldr x0, [x4]
-    mov x1, #1
-    mov x8, #33
-    svc #0
-
     bl read_column_to_stack
 
-    // guardar retornos de read_column_to_stack antes de que las syscalls los pisen
-    mov x24, x0
-    mov x25, x2
-    mov x26, x3
-
-    // restaurar stdout original
-    ldr x4, =guardado_stdout
-    ldr x0, [x4]
-    mov x1, #1
-    mov x8, #33
-    svc #0
-
-    // cerrar la copia temporal de stdout
-    ldr x4, =guardado_stdout
-    ldr x0, [x4]
-    mov x8, #57
-    svc #0
+    mov x24, x0               // Puntero inicio datos en stack
+    mov x25, x2               // x25 = N
+    mov x26, x3               // Posicion para restaurar stack
 
     cmp x25, #2
     blt rmse_error_datos_insuficientes
@@ -181,35 +151,39 @@ _start:
     ldr x4, =guardado_linea_inicial
     ldr x27, [x4]
 
+    // ---- calcular suma de ERROR2_i ----
     ldr x4, =IDEAL
-    ldr x29, [x4]
+    ldr x29, [x4]              // x29 = IDEAL
 
-    mov x4, #0
-    mov x5, x24
-    mov x6, #0
+    mov x4, #0                 // Acumulador suma(ERROR2_i)
+    mov x5, x24                // Puntero recorrido
+    mov x6, #0                 // Contador de elementos recorridos
 
 rmse_ciclo_suma:
     cmp x6, x25
     bge rmse_ciclo_suma_fin
 
-    ldr x7, [x5]
-    sub x7, x7, x29
-    mul x7, x7, x7
-    add x4, x4, x7
+    ldr x7, [x5]              // Y_i
+    sub x7, x7, x29           // ERROR_i = Y_i - IDEAL
+    mul x7, x7, x7            // ERROR2_i
+    add x4, x4, x7            // acumular
 
-    add x5, x5, #16
+    add x5, x5, #16           // siguiente dato
     add x6, x6, #1
     b rmse_ciclo_suma
 
 rmse_ciclo_suma_fin:
-    udiv x10, x4, x25
+    // MSE = suma / N 
+    udiv x10, x4, x25          // MSE (valores no negativos, division simple)
 
     mov sp, x26
 
+    // RMSE = raiz_entera(MSE)
     mov x0, x10
     bl raiz_entera
-    mov x28, x0
+    mov x28, x0                // x28 = RMSE
 
+    // ---- escribir salida OK a resultado_rmse.txt ----
     ldr x0, =texto_calc
     mov x1, len_texto_calc
     bl rmse_escribir
@@ -276,6 +250,7 @@ rmse_ciclo_suma_fin:
     mov x1, len_texto_estado_ok
     bl rmse_escribir
 
+    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
@@ -305,7 +280,7 @@ rmse_calcular_longitud:
 
     sub x11, x11, #1
     ldr x12, =buffer_ascii
-    sub x1, x11, x12
+    sub x1, x11, x12           // longitud de la cadena
 
     ldr x0, =buffer_ascii
     bl rmse_escribir
@@ -318,12 +293,12 @@ rmse_calcular_longitud:
     ret
 
 raiz_entera:
-    mov x1, x0
-    mov x4, #1
+    mov x1, x0        // Numero del que se busca raiz (se preserva)
+    mov x4, #1        // Iterador (candidato a raiz)
 
 raiz_entera_ciclo:
     mul x2, x4, x4
-    cmp x2, x1
+    cmp x2, x1        // x2 > x1 ?
     bgt raiz_entera_fin
     add x4, x4, #1
     b raiz_entera_ciclo
@@ -331,6 +306,8 @@ raiz_entera_ciclo:
 raiz_entera_fin:
     sub x0, x4, #1
     ret
+
+// ---- manejo de errores ----
 
 rmse_error_args:
     ldr x0, =texto_calc
@@ -357,6 +334,7 @@ rmse_error_args:
     mov x1, len_detalle_args
     bl rmse_escribir
 
+    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
@@ -393,6 +371,7 @@ rmse_error_datos_insuficientes:
     mov x1, len_detalle_datos_insuficientes
     bl rmse_escribir
 
+    // cerrar el archivo de salida antes de terminar
     ldr x4, =guardado_fd_salida
     ldr x0, [x4]
     mov x8, #57
